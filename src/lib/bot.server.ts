@@ -21,13 +21,15 @@ const CATEGORY_LABELS: Record<string, string> = {
   "UNIVERSAL PROXY": "🌐 UNIVERSAL PROXY 🔄",
 };
 
-export const NETWORKS: { label: string; currency: string }[] = [
-  { label: "TON", currency: "ton" },
-  { label: "TRC-20", currency: "usdttrc20" },
-  { label: "ETH ERC-20", currency: "usdterc20" },
-  { label: "POLYGON ERC-20", currency: "usdtmatic" },
-  { label: "BEP-20", currency: "usdtbsc" },
-];
+const RULES = `📜 <b>Shop rules</b>
+
+1. Proxies are sold as-is; check the IP with the built-in checker before buying.
+2. Balance top-ups are non-refundable and only usable inside this shop.
+3. One IP is sold once — after purchase it is removed from stock.
+4. Replacements are only given if the proxy is dead on delivery and reported within 30 minutes.
+5. Any illegal use is forbidden and gets you banned without refund.
+
+Tap <b>I accept</b> to continue.`;
 
 function db() {
   return createClient(process.env["SUPABASE_URL"]!, process.env["SUPABASE_SERVICE_ROLE_KEY"]!, {
@@ -40,16 +42,20 @@ type BotUser = {
   telegram_id: number;
   balance: number;
   rules_accepted: boolean;
+  referred_by: string | null;
+  referral_earned: number;
   state: any;
 };
 
+async function setting(key: string, fallback: number): Promise<number> {
+  const { data } = await db().from("settings").select("value").eq("key", key).maybeSingle();
+  const n = Number((data as any)?.value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 async function getUser(from: any): Promise<BotUser> {
   const sb = db();
-  const { data: existing } = await sb
-    .from("bot_users")
-    .select("*")
-    .eq("telegram_id", from.id)
-    .maybeSingle();
+  const { data: existing } = await sb.from("bot_users").select("*").eq("telegram_id", from.id).maybeSingle();
   if (existing) return existing as unknown as BotUser;
   const { data, error } = await sb
     .from("bot_users")
@@ -79,14 +85,15 @@ function mainMenuKeyboard(): Button[][] {
       { text: "🎁 Purchase history", callback_data: "hist" },
     ],
     [{ text: "🔍 Buy proxy 🔍", callback_data: "buy" }],
+    [{ text: "🔎 Search by country / ZIP / ISP", callback_data: "search" }],
     [{ text: "💵 Top up balance 💵", callback_data: "topup" }],
-    [{ text: "👁 check ip 👁", callback_data: "soon" }],
-    [{ text: "RENT USA NUMBER 🇺🇸", callback_data: "soon" }],
-    [{ text: "📵 data-only eSIM", callback_data: "soon" }],
     [
-      { text: "Gmail", callback_data: "soon" },
-      { text: "Check Socks", callback_data: "soon" },
+      { text: "👁 Check IP 👁", callback_data: "checkip" },
+      { text: "🧦 Check Socks", callback_data: "checksocks" },
     ],
+    [{ text: "🤝 Referral program", callback_data: "ref" }],
+    [{ text: "📜 Rules", callback_data: "rules" }],
+    [{ text: "🆘 Support", url: "https://t.me/luxsocks_supp" } as any],
   ];
 }
 
@@ -102,36 +109,93 @@ export async function handleUpdate(update: any) {
   if (message?.text) return handleMessage(message);
 }
 
+async function askRules(chatId: number) {
+  await sendMessage(chatId, RULES, [[{ text: "✅ I accept", callback_data: "accept" }]]);
+}
+
 async function handleMessage(message: any) {
   const chatId = message.chat.id;
   const text: string = message.text.trim();
   const user = await getUser(message.from);
 
   if (text.startsWith("/start")) {
+    const payload = text.split(" ")[1];
+    if (payload?.startsWith("ref") && !user.referred_by) {
+      const refId = Number(payload.replace(/[^0-9]/g, ""));
+      if (refId && refId !== user.telegram_id) {
+        const { data: referrer } = await db().from("bot_users").select("id").eq("telegram_id", refId).maybeSingle();
+        if (referrer) await db().from("bot_users").update({ referred_by: (referrer as any).id }).eq("id", user.id);
+      }
+    }
     await setState(user.id, {});
     await sendMessage(
       chatId,
-      "💎 <b>Luxury Socks</b> 💎 — high-quality proxy rental!\n\n" +
-        "📮 Help: @luxsocks_supp\n" +
-        "🐦 News: coming soon\n\n" +
+      "💎 <b>Luxury Socks</b> 💎 — premium residential & mobile proxies, instant delivery.\n\n" +
+        "📮 Support: @luxsocks_supp\n" +
         `💰 Your balance: <b>${money(user.balance)}</b>`,
     );
+    if (!user.rules_accepted) return askRules(chatId);
     await sendMainMenu(chatId);
     return;
   }
 
-  if (user.state?.awaiting === "amount") {
+  if (!user.rules_accepted) return askRules(chatId);
+
+  const awaiting = user.state?.awaiting;
+
+  if (awaiting === "amount") {
+    const min = await setting("min_deposit", 50);
     const amount = Number(text.replace(",", "."));
-    if (!Number.isFinite(amount) || amount < 1) {
-      await sendMessage(chatId, "❌ Please enter a number in $ (minimum 1).");
+    if (!Number.isFinite(amount) || amount < min) {
+      await sendMessage(chatId, `❌ Minimum deposit is <b>${money(min)}</b>. Please enter a bigger amount.`);
       return;
     }
     await setState(user.id, { awaiting: null, amount });
+    const { data: wallets } = await db().from("wallets").select("*").eq("active", true).order("network");
+    if (!wallets?.length) {
+      await sendMessage(chatId, "⚠️ Top-ups are temporarily unavailable. Please contact @luxsocks_supp.", [backRow()]);
+      return;
+    }
     await sendMessage(
       chatId,
       `Select a network for <b>${money(amount)}</b>`,
-      NETWORKS.map((n) => [{ text: n.label, callback_data: `net:${n.currency}` }]).concat([backRow()]),
+      (wallets as any[])
+        .map((w) => [{ text: `${w.network} (${String(w.currency).toUpperCase()})`, callback_data: `net:${w.id}` }])
+        .concat([backRow()]),
     );
+    return;
+  }
+
+  if (awaiting === "search") {
+    await setState(user.id, { awaiting: null });
+    await runSearch(chatId, text);
+    return;
+  }
+
+  if (awaiting === "checkip") {
+    await setState(user.id, { awaiting: null });
+    await checkIp(chatId, text);
+    return;
+  }
+
+  if (awaiting === "checksocks") {
+    await setState(user.id, { awaiting: null });
+    const ip = text.split(":")[0]!.trim();
+    await checkIp(chatId, ip, true);
+    return;
+  }
+
+  if (awaiting === "txhash") {
+    const topupId = user.state?.topupId;
+    await setState(user.id, { awaiting: null });
+    if (topupId) {
+      await db().from("topups").update({ tx_hash: text, status: "pending_review" }).eq("id", topupId);
+      await sendMessage(
+        chatId,
+        "🔎 Thanks! Your payment is being verified. Your balance is credited as soon as it is confirmed.",
+        [backRow()],
+      );
+    }
     return;
   }
 
@@ -144,10 +208,38 @@ async function handleCallback(cq: any) {
   const user = await getUser(cq.from);
   await answerCallback(cq.id);
 
+  if (data === "accept") {
+    await db().from("bot_users").update({ rules_accepted: true }).eq("id", user.id);
+    await sendMessage(chatId, "✅ Rules accepted. Welcome to Luxury Socks!");
+    return sendMainMenu(chatId);
+  }
+
+  if (!user.rules_accepted) return askRules(chatId);
+
   if (data === "menu") return sendMainMenu(chatId);
+  if (data === "rules") {
+    await sendMessage(chatId, RULES, [backRow()]);
+    return;
+  }
 
   if (data === "soon") {
     await sendMessage(chatId, "🛠 This section is coming soon.", [backRow()]);
+    return;
+  }
+
+  if (data === "ref") {
+    const { count } = await db()
+      .from("bot_users")
+      .select("id", { count: "exact", head: true })
+      .eq("referred_by", user.id);
+    const percent = await setting("referral_percent", 5);
+    await sendMessage(
+      chatId,
+      `🤝 <b>Referral program</b>\n\nEarn <b>${percent}%</b> of every top-up made by people you invite.\n\n` +
+        `👥 Invited: <b>${count ?? 0}</b>\n💵 Earned: <b>${money(user.referral_earned ?? 0)}</b>\n\n` +
+        `Your link:\nhttps://t.me/Proxynvn_bot?start=ref${user.telegram_id}`,
+      [backRow()],
+    );
     return;
   }
 
@@ -160,7 +252,7 @@ async function handleCallback(cq: any) {
       .eq("kind", "buy");
     await sendMessage(
       chatId,
-      `👤 <b>Personal Area</b>\n\n🆔 ID: <code>${user.telegram_id}</code>\n💰 Balance: <b>${money(user.balance)}</b>\n🛒 Purchases: <b>${count ?? 0}</b>`,
+      `👤 <b>Personal Area</b>\n\n🆔 ID: <code>${user.telegram_id}</code>\n💰 Balance: <b>${money(user.balance)}</b>\n🛒 Purchases: <b>${count ?? 0}</b>\n🤝 Referral earnings: <b>${money(user.referral_earned ?? 0)}</b>`,
       [[{ text: "💵 Top up balance 💵", callback_data: "topup" }], backRow()],
     );
     return;
@@ -187,19 +279,49 @@ async function handleCallback(cq: any) {
   }
 
   if (data === "topup") {
+    const min = await setting("min_deposit", 50);
     await setState(user.id, { awaiting: "amount" });
-    await sendMessage(chatId, "Enter amount in $");
+    await sendMessage(chatId, `Enter amount in $ (minimum <b>${money(min)}</b>)`);
+    return;
+  }
+
+  if (data === "search") {
+    await setState(user.id, { awaiting: "search" });
+    await sendMessage(chatId, "🔎 Send a country, city, ZIP code or ISP name.");
+    return;
+  }
+
+  if (data === "checkip") {
+    await setState(user.id, { awaiting: "checkip" });
+    await sendMessage(chatId, "👁 Send an IP address to check.");
+    return;
+  }
+
+  if (data === "checksocks") {
+    await setState(user.id, { awaiting: "checksocks" });
+    await sendMessage(chatId, "🧦 Send the proxy as <code>ip:port:login:pass</code>.");
     return;
   }
 
   if (data.startsWith("net:")) {
-    const currency = data.slice(4);
+    const walletId = data.slice(4);
     const amount = Number(user.state?.amount ?? 0);
     if (!amount) {
       await sendMessage(chatId, "Please start the top-up again.", [backRow()]);
       return;
     }
-    await createTopup(user, chatId, currency, amount);
+    await createTopup(user, chatId, walletId, amount);
+    return;
+  }
+
+  if (data === "paid") {
+    const topupId = user.state?.topupId;
+    if (!topupId) {
+      await sendMessage(chatId, "Please start the top-up again.", [backRow()]);
+      return;
+    }
+    await setState(user.id, { ...user.state, awaiting: "txhash" });
+    await sendMessage(chatId, "Send the transaction hash (TXID) of your payment.");
     return;
   }
 
@@ -270,16 +392,7 @@ async function handleCallback(cq: any) {
       await sendMessage(chatId, "No proxies available here right now.", [backRow("buy")]);
       return;
     }
-    for (const p of list as any[]) {
-      await sendMessage(
-        chatId,
-        `💎 IP <b>${maskIp(p.ip)}</b>\n🛰 ISP ${p.isp}\n🏙 CITY ${p.city}\n🏢 REGION ${p.region}\n📶 PING ${p.ping}\n🏤 ZIP ${p.zip}\n📍 COUNTRY ${p.country}`,
-        [
-          [{ text: `Show ip ${money(p.reveal_price)}`, callback_data: `show:${p.id}` }],
-          [{ text: `Buy ${money(p.price)}`, callback_data: `buyp:${p.id}` }],
-        ],
-      );
-    }
+    for (const p of list as any[]) await sendProxyCard(chatId, p);
     await sendMessage(chatId, "⬅️ Back to categories", [backRow("buy")]);
     return;
   }
@@ -289,6 +402,62 @@ async function handleCallback(cq: any) {
     const id = data.split(":")[1];
     await purchase(user, chatId, id!, kind);
     return;
+  }
+}
+
+async function sendProxyCard(chatId: number, p: any) {
+  await sendMessage(
+    chatId,
+    `💎 IP <b>${maskIp(p.ip)}</b>\n🛰 ISP ${p.isp}\n🏙 CITY ${p.city}\n🏢 REGION ${p.region}\n📶 PING ${p.ping}\n🏤 ZIP ${p.zip}\n📍 COUNTRY ${p.country}`,
+    [
+      [{ text: `Show ip ${money(p.reveal_price)}`, callback_data: `show:${p.id}` }],
+      [{ text: `Buy ${money(p.price)}`, callback_data: `buyp:${p.id}` }],
+    ],
+  );
+}
+
+async function runSearch(chatId: number, term: string) {
+  const s = `%${term}%`;
+  const { data: list } = await db()
+    .from("proxies")
+    .select("*")
+    .eq("sold", false)
+    .or(`country.ilike.${s},city.ilike.${s},zip.ilike.${s},isp.ilike.${s},region.ilike.${s}`)
+    .limit(10);
+  if (!list?.length) {
+    await sendMessage(chatId, `Nothing found for “${term}”.`, [
+      [{ text: "🔎 Search again", callback_data: "search" }],
+      backRow(),
+    ]);
+    return;
+  }
+  await sendMessage(chatId, `🔎 <b>${list.length}</b> results for “${term}”`);
+  for (const p of list as any[]) await sendProxyCard(chatId, p);
+  await sendMessage(chatId, "⬅️ Back to menu", [backRow()]);
+}
+
+async function checkIp(chatId: number, ip: string, socks = false) {
+  const clean = ip.trim();
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(clean)) {
+    await sendMessage(chatId, "❌ That does not look like a valid IPv4 address.", [backRow()]);
+    return;
+  }
+  try {
+    const res = await fetch(
+      `http://ip-api.com/json/${clean}?fields=status,country,regionName,city,zip,isp,org,proxy,hosting,mobile`,
+    );
+    const info: any = await res.json();
+    if (info.status !== "success") throw new Error("lookup failed");
+    await sendMessage(
+      chatId,
+      `${socks ? "🧦 <b>Socks check</b>" : "👁 <b>IP check</b>"}\n\n` +
+        `IP: <code>${clean}</code>\n📍 ${info.city ?? "-"}, ${info.regionName ?? "-"}, ${info.country ?? "-"}\n` +
+        `🏤 ZIP ${info.zip ?? "-"}\n🛰 ISP ${info.isp ?? "-"}\n🏢 ORG ${info.org ?? "-"}\n` +
+        `🚩 Proxy/VPN flag: ${info.proxy ? "yes ⚠️" : "no ✅"}\n🖥 Hosting: ${info.hosting ? "yes ⚠️" : "no ✅"}\n📱 Mobile: ${info.mobile ? "yes" : "no"}`,
+      [backRow()],
+    );
+  } catch {
+    await sendMessage(chatId, "⚠️ Could not check that IP right now, try again shortly.", [backRow()]);
   }
 }
 
@@ -315,17 +484,28 @@ async function purchase(user: BotUser, chatId: number, proxyId: string, kind: "b
   const price = Number(kind === "buy" ? p.price : p.reveal_price);
   const balance = Number(user.balance);
   if (balance < price) {
-    await sendMessage(
-      chatId,
-      `❌ Not enough balance. Needed ${money(price)}, you have ${money(balance)}.`,
-      [[{ text: "💵 Top up balance 💵", callback_data: "topup" }], backRow()],
-    );
+    await sendMessage(chatId, `❌ Not enough balance. Needed ${money(price)}, you have ${money(balance)}.`, [
+      [{ text: "💵 Top up balance 💵", callback_data: "topup" }],
+      backRow(),
+    ]);
     return;
+  }
+
+  if (kind === "buy") {
+    const { data: claimed } = await sb
+      .from("proxies")
+      .update({ sold: true })
+      .eq("id", p.id)
+      .eq("sold", false)
+      .select("id");
+    if (!claimed?.length) {
+      await sendMessage(chatId, "❌ Someone just bought this proxy.", [backRow("buy")]);
+      return;
+    }
   }
 
   const newBalance = balance - price;
   await sb.from("bot_users").update({ balance: newBalance }).eq("id", user.id);
-  if (kind === "buy") await sb.from("proxies").update({ sold: true }).eq("id", p.id);
   await sb.from("orders").insert({
     bot_user_id: user.id,
     proxy_id: p.id,
@@ -349,84 +529,48 @@ async function purchase(user: BotUser, chatId: number, proxyId: string, kind: "b
   );
 }
 
-async function createTopup(user: BotUser, chatId: number, currency: string, amount: number) {
-  const apiKey = process.env["NOWPAYMENTS_API_KEY"];
-  const network = NETWORKS.find((n) => n.currency === currency)?.label ?? currency;
+async function createTopup(user: BotUser, chatId: number, walletId: string, amount: number) {
   const sb = db();
-
-  if (!apiKey) {
-    await sendMessage(
-      chatId,
-      "⚠️ Crypto top-ups are not activated yet. Please contact support.",
-      [backRow()],
-    );
+  const { data: wallet } = await sb.from("wallets").select("*").eq("id", walletId).maybeSingle();
+  if (!wallet) {
+    await sendMessage(chatId, "⚠️ That network is unavailable. Please pick another one.", [backRow()]);
     return;
   }
+  const w = wallet as any;
 
   const { data: row, error } = await sb
     .from("topups")
     .insert({
       bot_user_id: user.id,
-      network,
-      pay_currency: currency,
+      network: w.network,
+      pay_currency: w.currency,
       amount_usd: amount,
-      status: "creating",
+      pay_address: w.address,
+      wallet_id: w.id,
+      provider: "manual",
+      status: "waiting",
     })
     .select("id")
     .single();
   if (error) throw error;
 
-  const res = await fetch("https://api.nowpayments.io/v1/payment", {
-    method: "POST",
-    headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      price_amount: amount,
-      price_currency: "usd",
-      pay_currency: currency,
-      order_id: row.id,
-      order_description: `Balance top-up for ${user.telegram_id}`,
-      ipn_callback_url: `${process.env["PUBLIC_APP_URL"] ?? ""}/api/public/nowpayments/ipn`,
-    }),
-  });
-  const body = await res.text();
-  if (!res.ok) {
-    console.error(`NOWPayments create failed [${res.status}]: ${body}`);
-    await sb.from("topups").update({ status: "failed" }).eq("id", row.id);
-    await sendMessage(chatId, `❌ Could not create the payment. ${body}`, [backRow()]);
-    return;
-  }
-  const payment = JSON.parse(body);
-  await sb
-    .from("topups")
-    .update({
-      status: "waiting",
-      provider_id: String(payment.payment_id),
-      pay_address: payment.pay_address,
-      pay_amount: payment.pay_amount,
-    })
-    .eq("id", row.id);
-
-  await sendPhoto(chatId, qrUrl(payment.pay_address));
+  await setState(user.id, { ...user.state, topupId: (row as any).id });
+  await sendPhoto(chatId, qrUrl(w.address));
   await sendMessage(
     chatId,
-    `ADDRESS\n<code>${payment.pay_address}</code>\nAMOUNT ${payment.pay_amount}\nCOIN ${String(payment.pay_currency).toUpperCase()}\nNETWORK ${network}\n\nYour balance is credited automatically after the network confirms the payment.`,
-    [backRow()],
+    `💵 <b>Top up ${money(amount)}</b>\n\nNETWORK ${w.network}\nCOIN ${String(w.currency).toUpperCase()}\nADDRESS\n<code>${w.address}</code>` +
+      (w.memo ? `\nMEMO/TAG <code>${w.memo}</code>` : "") +
+      `\n\nSend the exact USD value in ${String(w.currency).toUpperCase()}, then tap <b>I have paid</b> and send your transaction hash. Balance is credited after confirmation.`,
+    [[{ text: "✅ I have paid", callback_data: "paid" }], backRow()],
   );
 }
 
-export async function creditTopup(providerId: string, status: string) {
+export async function creditTopupById(topupId: string) {
   const sb = db();
-  const { data: topup } = await sb
-    .from("topups")
-    .select("*")
-    .eq("provider_id", providerId)
-    .maybeSingle();
+  const { data: topup } = await sb.from("topups").select("*").eq("id", topupId).maybeSingle();
   if (!topup) return;
   const t = topup as any;
   if (t.credited_at) return;
-
-  await sb.from("topups").update({ status }).eq("id", t.id);
-  if (status !== "finished" && status !== "confirmed") return;
 
   const { data: botUser } = await sb.from("bot_users").select("*").eq("id", t.bot_user_id).maybeSingle();
   if (!botUser) return;
@@ -434,9 +578,37 @@ export async function creditTopup(providerId: string, status: string) {
   const newBalance = Number(u.balance) + Number(t.amount_usd);
   await sb.from("bot_users").update({ balance: newBalance }).eq("id", u.id);
   await sb.from("topups").update({ credited_at: new Date().toISOString(), status: "finished" }).eq("id", t.id);
+
+  if (u.referred_by) {
+    const percent = await setting("referral_percent", 5);
+    const bonus = (Number(t.amount_usd) * percent) / 100;
+    const { data: ref } = await sb.from("bot_users").select("*").eq("id", u.referred_by).maybeSingle();
+    if (ref) {
+      const r = ref as any;
+      await sb
+        .from("bot_users")
+        .update({ balance: Number(r.balance) + bonus, referral_earned: Number(r.referral_earned ?? 0) + bonus })
+        .eq("id", r.id);
+      await sendMessage(r.telegram_id, `🤝 Referral bonus: <b>${money(bonus)}</b> added to your balance.`).catch(
+        () => undefined,
+      );
+    }
+  }
+
   await sendMessage(
     u.telegram_id,
     `✅ Payment received: <b>${money(t.amount_usd)}</b>\n💰 New balance: <b>${money(newBalance)}</b>`,
     [[{ text: "Main menu", callback_data: "menu" }]],
   );
+}
+
+export async function creditTopup(providerId: string, status: string) {
+  const sb = db();
+  const { data: topup } = await sb.from("topups").select("id, credited_at").eq("provider_id", providerId).maybeSingle();
+  if (!topup) return;
+  const t = topup as any;
+  await sb.from("topups").update({ status }).eq("id", t.id);
+  if (status !== "finished" && status !== "confirmed") return;
+  if (t.credited_at) return;
+  await creditTopupById(t.id);
 }

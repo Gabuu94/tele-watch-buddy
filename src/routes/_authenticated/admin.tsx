@@ -3,13 +3,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { adjustBalance, claimFirstAdmin, getDashboard, getMyAdminStatus } from "@/lib/admin.functions";
+import { adjustBalance, approveTopup, claimFirstAdmin, getDashboard, getMyAdminStatus } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ProxyManager } from "@/components/admin/ProxyManager";
+import { BulkUpload } from "@/components/admin/BulkUpload";
+import { WalletManager } from "@/components/admin/WalletManager";
 
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -35,6 +37,7 @@ function AdminPage() {
   const dashboardFn = useServerFn(getDashboard);
   const claimFn = useServerFn(claimFirstAdmin);
   const adjustFn = useServerFn(adjustBalance);
+  const reviewFn = useServerFn(approveTopup);
 
   const status = useQuery({ queryKey: ["admin-status"], queryFn: () => statusFn({}) });
   const dashboard = useQuery({
@@ -50,6 +53,11 @@ function AdminPage() {
   const adjust = useMutation({
     mutationFn: (vars: { botUserId: string; amount: number }) => adjustFn({ data: vars }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] }),
+  });
+
+  const review = useMutation({
+    mutationFn: (vars: { id: string; approve: boolean }) => reviewFn({ data: vars }),
+    onSuccess: () => queryClient.invalidateQueries(),
   });
 
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -124,16 +132,24 @@ function AdminPage() {
       </section>
 
       <Tabs defaultValue="proxies">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="proxies">Proxy stock</TabsTrigger>
+          <TabsTrigger value="bulk">Bulk add</TabsTrigger>
           <TabsTrigger value="customers">Customers</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="topups">Top-ups</TabsTrigger>
+          <TabsTrigger value="payments">Wallets & settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="proxies">
           <ProxyManager />
         </TabsContent>
+
+        <TabsContent value="bulk">
+          <BulkUpload />
+        </TabsContent>
+
+
 
 
 
@@ -192,18 +208,43 @@ function AdminPage() {
           {(data?.topups ?? []).map((t: any) => (
             <Card key={t.id}>
               <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-                <div>
+                <div className="min-w-0">
                   <p className="font-medium">
                     {money(t.amount_usd)} · {t.network}
                   </p>
-                  <p className="text-sm text-muted-foreground">{new Date(t.created_at).toLocaleString()}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t.bot_users?.username ? `@${t.bot_users.username}` : `ID ${t.bot_users?.telegram_id ?? "?"}`} ·{" "}
+                    {new Date(t.created_at).toLocaleString()}
+                  </p>
+                  {t.tx_hash ? <p className="truncate text-xs text-muted-foreground">TX {t.tx_hash}</p> : null}
                 </div>
-                <Badge variant={t.status === "finished" ? "default" : "secondary"}>{t.status}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant={t.status === "finished" ? "default" : "secondary"}>{t.status}</Badge>
+                  {t.status !== "finished" && t.status !== "rejected" ? (
+                    <>
+                      <Button size="sm" onClick={() => review.mutate({ id: t.id, approve: true })}>
+                        Credit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => review.mutate({ id: t.id, approve: false })}
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
           ))}
           {!data?.topups.length ? <p className="text-sm text-muted-foreground">No top-ups yet.</p> : null}
         </TabsContent>
+
+        <TabsContent value="payments">
+          <WalletManager />
+        </TabsContent>
+
       </Tabs>
     </main>
   );

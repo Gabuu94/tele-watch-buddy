@@ -21,6 +21,8 @@ export type Database = {
           created_at: string
           first_name: string | null
           id: string
+          referral_earned: number
+          referred_by: string | null
           rules_accepted: boolean
           state: Json
           telegram_id: number
@@ -32,6 +34,8 @@ export type Database = {
           created_at?: string
           first_name?: string | null
           id?: string
+          referral_earned?: number
+          referred_by?: string | null
           rules_accepted?: boolean
           state?: Json
           telegram_id: number
@@ -43,12 +47,22 @@ export type Database = {
           created_at?: string
           first_name?: string | null
           id?: string
+          referral_earned?: number
+          referred_by?: string | null
           rules_accepted?: boolean
           state?: Json
           telegram_id?: number
           username?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "bot_users_referred_by_fkey"
+            columns: ["referred_by"]
+            isOneToOne: false
+            referencedRelation: "bot_users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       orders: {
         Row: {
@@ -155,8 +169,27 @@ export type Database = {
         }
         Relationships: []
       }
+      settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: []
+      }
       topups: {
         Row: {
+          admin_note: string | null
           amount_usd: number
           bot_user_id: string
           created_at: string
@@ -169,8 +202,11 @@ export type Database = {
           provider: string
           provider_id: string | null
           status: string
+          tx_hash: string | null
+          wallet_id: string | null
         }
         Insert: {
+          admin_note?: string | null
           amount_usd: number
           bot_user_id: string
           created_at?: string
@@ -183,8 +219,11 @@ export type Database = {
           provider?: string
           provider_id?: string | null
           status?: string
+          tx_hash?: string | null
+          wallet_id?: string | null
         }
         Update: {
+          admin_note?: string | null
           amount_usd?: number
           bot_user_id?: string
           created_at?: string
@@ -197,6 +236,8 @@ export type Database = {
           provider?: string
           provider_id?: string | null
           status?: string
+          tx_hash?: string | null
+          wallet_id?: string | null
         }
         Relationships: [
           {
@@ -204,6 +245,13 @@ export type Database = {
             columns: ["bot_user_id"]
             isOneToOne: false
             referencedRelation: "bot_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topups_wallet_id_fkey"
+            columns: ["wallet_id"]
+            isOneToOne: false
+            referencedRelation: "wallets"
             referencedColumns: ["id"]
           },
         ]
@@ -226,6 +274,42 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      wallets: {
+        Row: {
+          active: boolean
+          address: string
+          created_at: string
+          currency: string
+          id: string
+          memo: string | null
+          min_deposit: number
+          network: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          address: string
+          created_at?: string
+          currency: string
+          id?: string
+          memo?: string | null
+          min_deposit?: number
+          network: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          address?: string
+          created_at?: string
+          currency?: string
+          id?: string
+          memo?: string | null
+          min_deposit?: number
+          network?: string
+          updated_at?: string
         }
         Relationships: []
       }
