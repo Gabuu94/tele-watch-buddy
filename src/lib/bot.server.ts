@@ -53,6 +53,23 @@ async function setting(key: string, fallback: number): Promise<number> {
   return Number.isFinite(n) ? n : fallback;
 }
 
+async function stringSetting(key: string): Promise<string> {
+  const { data } = await db().from("settings").select("value").eq("key", key).maybeSingle();
+  return String((data as any)?.value ?? "").trim();
+}
+
+const NP_CURRENCIES: Array<[string, string]> = [
+  ["usdttrc20", "USDT · TRC-20"],
+  ["usdterc20", "USDT · ERC-20"],
+  ["usdtbsc", "USDT · BEP-20"],
+  ["ton", "TON"],
+  ["btc", "Bitcoin"],
+  ["eth", "Ethereum"],
+  ["ltc", "Litecoin"],
+  ["sol", "Solana"],
+  ["trx", "Tron"],
+];
+
 async function getUser(from: any): Promise<BotUser> {
   const sb = db();
   const { data: existing } = await sb.from("bot_users").select("*").eq("telegram_id", from.id).maybeSingle();
@@ -152,17 +169,18 @@ async function handleMessage(message: any) {
     }
     await setState(user.id, { awaiting: null, amount });
     const { data: wallets } = await db().from("wallets").select("*").eq("active", true).order("network");
-    if (!wallets?.length) {
+    const npEnabled = Boolean(await stringSetting("nowpayments_api_key"));
+    if (!wallets?.length && !npEnabled) {
       await sendMessage(chatId, "⚠️ Top-ups are temporarily unavailable. Please contact @luxury_sock.", [backRow()]);
       return;
     }
-    await sendMessage(
-      chatId,
-      `Select a network for <b>${money(amount)}</b>`,
-      (wallets as any[])
-        .map((w) => [{ text: `${w.network} (${String(w.currency).toUpperCase()})`, callback_data: `net:${w.id}` }])
-        .concat([backRow()]),
-    );
+    const rows: Button[][] = [];
+    if (npEnabled) rows.push([{ text: "⚡ Pay automatically (instant credit)", callback_data: "npauto" }]);
+    for (const w of (wallets ?? []) as any[]) {
+      rows.push([{ text: `${w.network} (${String(w.currency).toUpperCase()})`, callback_data: `net:${w.id}` }]);
+    }
+    rows.push(backRow());
+    await sendMessage(chatId, `Select a payment method for <b>${money(amount)}</b>`, rows);
     return;
   }
 
