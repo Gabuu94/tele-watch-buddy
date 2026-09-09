@@ -26,11 +26,13 @@ export function WalletManager() {
   const [draft, setDraft] = useState<WalletDraft>({ ...blank });
   const [minDeposit, setMinDeposit] = useState("50");
   const [referral, setReferral] = useState("5");
+  const [npKey, setNpKey] = useState("");
 
   useEffect(() => {
     if (settings.data) {
       setMinDeposit(settings.data["min_deposit"] ?? "50");
       setReferral(settings.data["referral_percent"] ?? "5");
+      setNpKey(settings.data["nowpayments_api_key"] ?? "");
     }
   }, [settings.data]);
 
