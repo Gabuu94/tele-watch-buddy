@@ -98,3 +98,66 @@ export const adjustBalance = createServerFn({ method: "POST" })
     if (updateError) throw new Error(updateError.message);
     return { balance: next };
   });
+
+export const listProxies = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { search?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    let query = supabaseAdmin.from("proxies").select("*").order("created_at", { ascending: false }).limit(200);
+    if (data.search) {
+      const s = `%${data.search}%`;
+      query = query.or(`ip.ilike.${s},city.ilike.${s},country.ilike.${s},category.ilike.${s},isp.ilike.${s}`);
+    }
+    const { data: rows, error } = await query;
+    if (error) throw new Error(error.message);
+    return rows as any[];
+  });
+
+export type ProxyInput = {
+  id?: string;
+  category: string;
+  continent: string;
+  country: string;
+  region: string;
+  city: string;
+  isp: string;
+  ip: string;
+  port: number;
+  login: string;
+  password: string;
+  ping: number;
+  zip: string;
+  reveal_price: number;
+  price: number;
+  sold: boolean;
+};
+
+export const saveProxy = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: ProxyInput) => input)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { id, ...fields } = data;
+    if (id) {
+      const { error } = await supabaseAdmin.from("proxies").update(fields).eq("id", id);
+      if (error) throw new Error(error.message);
+      return { id };
+    }
+    const { data: row, error } = await supabaseAdmin.from("proxies").insert(fields).select("id").single();
+    if (error) throw new Error(error.message);
+    return { id: (row as any).id as string };
+  });
+
+export const deleteProxy = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id: string }) => input)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("proxies").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
