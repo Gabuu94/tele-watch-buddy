@@ -321,6 +321,31 @@ async function handleCallback(cq: any) {
     return;
   }
 
+  if (data === "npauto") {
+    const amount = Number(user.state?.amount ?? 0);
+    if (!amount) {
+      await sendMessage(chatId, "Please start the top-up again.", [backRow()]);
+      return;
+    }
+    await sendMessage(
+      chatId,
+      `⚡ <b>Automatic payment — ${money(amount)}</b>\n\nPick the coin you want to pay with. Your balance is credited automatically once the payment confirms.`,
+      NP_CURRENCIES.map(([code, label]) => [{ text: label, callback_data: `npc:${code}` }]).concat([backRow()]),
+    );
+    return;
+  }
+
+  if (data.startsWith("npc:")) {
+    const currency = data.slice(4);
+    const amount = Number(user.state?.amount ?? 0);
+    if (!amount) {
+      await sendMessage(chatId, "Please start the top-up again.", [backRow()]);
+      return;
+    }
+    await createNowpayment(user, chatId, currency, amount);
+    return;
+  }
+
   if (data.startsWith("net:")) {
     const walletId = data.slice(4);
     const amount = Number(user.state?.amount ?? 0);
