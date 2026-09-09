@@ -397,12 +397,55 @@ async function handleCallback(cq: any) {
     return;
   }
 
-  if (data.startsWith("show:") || data.startsWith("buyp:")) {
-    const kind = data.startsWith("buyp:") ? "buy" : "reveal";
-    const id = data.split(":")[1];
-    await purchase(user, chatId, id!, kind);
+  if (data.startsWith("per:")) {
+    const id = data.split(":")[1]!;
+    await sendPeriodMenu(chatId, id);
     return;
   }
+
+  if (data.startsWith("show:") || data.startsWith("buyp:")) {
+    const kind = data.startsWith("buyp:") ? "buy" : "reveal";
+    const parts = data.split(":");
+    const id = parts[1];
+    const periodIdx = Number(parts[2] ?? 0);
+    await purchase(user, chatId, id!, kind, periodIdx);
+    return;
+  }
+}
+
+export const RENTAL_PERIODS = [
+  { label: "1 days", days: 1, multiplier: 1 },
+  { label: "3 days", days: 3, multiplier: 1.5 },
+  { label: "7 days", days: 7, multiplier: 2.2 },
+  { label: "14 days", days: 14, multiplier: 3.2 },
+  { label: "1 months", days: 30, multiplier: 5 },
+  { label: "3 months", days: 90, multiplier: 15 },
+  { label: "6 months", days: 180, multiplier: 25 },
+  { label: "1 yr.", days: 365, multiplier: 49 },
+];
+
+function periodPrice(base: number, idx: number) {
+  const p = RENTAL_PERIODS[idx] ?? RENTAL_PERIODS[0]!;
+  return Math.round(Number(base) * p.multiplier * 100) / 100;
+}
+
+async function sendPeriodMenu(chatId: number, proxyId: string) {
+  const { data: proxy } = await db().from("proxies").select("*").eq("id", proxyId).maybeSingle();
+  if (!proxy || (proxy as any).sold) {
+    await sendMessage(chatId, "❌ This proxy is no longer available.", [backRow("buy")]);
+    return;
+  }
+  const p = proxy as any;
+  await sendMessage(
+    chatId,
+    "⏱ <b>Select rental period:</b>",
+    RENTAL_PERIODS.map((per, i) => [
+      {
+        text: `⏱ ${per.label} · ${money(periodPrice(p.price, i))} · ${p.country}`,
+        callback_data: `buyp:${p.id}:${i}`,
+      },
+    ]).concat([[{ text: "◀️ All services", callback_data: "menu" }]]),
+  );
 }
 
 async function sendProxyCard(chatId: number, p: any) {
@@ -411,7 +454,7 @@ async function sendProxyCard(chatId: number, p: any) {
     `💎 IP <b>${maskIp(p.ip)}</b>\n🛰 ISP ${p.isp}\n🏙 CITY ${p.city}\n🏢 REGION ${p.region}\n📶 PING ${p.ping}\n🏤 ZIP ${p.zip}\n📍 COUNTRY ${p.country}`,
     [
       [{ text: `Show ip ${money(p.reveal_price)}`, callback_data: `show:${p.id}` }],
-      [{ text: `Buy ${money(p.price)}`, callback_data: `buyp:${p.id}` }],
+      [{ text: `Rent from ${money(p.price)}`, callback_data: `per:${p.id}` }],
     ],
   );
 }
