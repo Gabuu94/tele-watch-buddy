@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { ProxyManager } from "@/components/admin/ProxyManager";
+
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
@@ -121,12 +123,19 @@ function AdminPage() {
         ))}
       </section>
 
-      <Tabs defaultValue="customers">
+      <Tabs defaultValue="proxies">
         <TabsList>
+          <TabsTrigger value="proxies">Proxy stock</TabsTrigger>
           <TabsTrigger value="customers">Customers</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="topups">Top-ups</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="proxies">
+          <ProxyManager />
+        </TabsContent>
+
+
 
         <TabsContent value="customers" className="space-y-3">
           {(data?.users ?? []).map((u: any) => (
