@@ -626,6 +626,70 @@ async function purchase(
   );
 }
 
+async function createNowpayment(user: BotUser, chatId: number, currency: string, amount: number) {
+  const sb = db();
+  const apiKey = await stringSetting("nowpayments_api_key");
+  if (!apiKey) {
+    await sendMessage(chatId, "⚠️ Automatic payments are not configured yet. Please pick another method.", [backRow()]);
+    return;
+  }
+
+  const { data: row, error } = await sb
+    .from("topups")
+    .insert({
+      bot_user_id: user.id,
+      network: "NOWPayments",
+      pay_currency: currency,
+      amount_usd: amount,
+      provider: "nowpayments",
+      status: "waiting",
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  const topupId = (row as any).id as string;
+
+  const callbackBase = (process.env["PUBLIC_APP_URL"] ?? "").replace(/\/$/, "");
+  const res = await fetch("https://api.nowpayments.io/v1/payment", {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      price_amount: amount,
+      price_currency: "usd",
+      pay_currency: currency,
+      order_id: topupId,
+      order_description: "Luxury Socks balance top-up",
+      ...(callbackBase ? { ipn_callback_url: `${callbackBase}/api/public/nowpayments/ipn` } : {}),
+    }),
+  });
+  const body: any = await res.json().catch(() => ({}));
+  if (!res.ok || !body.payment_id) {
+    await sb.from("topups").update({ status: "failed", admin_note: JSON.stringify(body).slice(0, 500) }).eq("id", topupId);
+    await sendMessage(
+      chatId,
+      `❌ Could not create the payment (${body.message ?? "provider error"}). Try another coin or method.`,
+      [backRow()],
+    );
+    return;
+  }
+
+  await sb
+    .from("topups")
+    .update({ provider_id: String(body.payment_id), pay_address: body.pay_address ?? null })
+    .eq("id", topupId);
+  await setState(user.id, { ...user.state, topupId });
+
+  const label = NP_CURRENCIES.find(([c]) => c === currency)?.[1] ?? currency.toUpperCase();
+  if (body.pay_address) await sendPhoto(chatId, qrUrl(String(body.pay_address)));
+  await sendMessage(
+    chatId,
+    `⚡ <b>Top up ${money(amount)} via ${label}</b>\n\nSend exactly\n<code>${body.pay_amount} ${String(body.pay_currency).toUpperCase()}</code>\nto\n<code>${body.pay_address}</code>` +
+      (body.payin_extra_id ? `\nMEMO/TAG <code>${body.payin_extra_id}</code>` : "") +
+      `\n\n✅ Your balance is credited <b>automatically</b> after network confirmation — no need to send anything else.`,
+    [backRow()],
+  );
+}
+
 async function createTopup(user: BotUser, chatId: number, walletId: string, amount: number) {
   const sb = db();
   const { data: wallet } = await sb.from("wallets").select("*").eq("id", walletId).maybeSingle();
