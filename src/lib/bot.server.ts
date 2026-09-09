@@ -93,7 +93,7 @@ function mainMenuKeyboard(): Button[][] {
     ],
     [{ text: "🤝 Referral program", callback_data: "ref" }],
     [{ text: "📜 Rules", callback_data: "rules" }],
-    [{ text: "🆘 Support", url: "https://t.me/luxsocks_supp" } as any],
+    [{ text: "🆘 Support", url: "https://t.me/luxury_sock" } as any],
   ];
 }
 
@@ -131,7 +131,7 @@ async function handleMessage(message: any) {
     await sendMessage(
       chatId,
       "💎 <b>Luxury Socks</b> 💎 — premium residential & mobile proxies, instant delivery.\n\n" +
-        "📮 Support: @luxsocks_supp\n" +
+        "📮 Support: @luxury_sock\n" +
         `💰 Your balance: <b>${money(user.balance)}</b>`,
     );
     if (!user.rules_accepted) return askRules(chatId);
@@ -153,7 +153,7 @@ async function handleMessage(message: any) {
     await setState(user.id, { awaiting: null, amount });
     const { data: wallets } = await db().from("wallets").select("*").eq("active", true).order("network");
     if (!wallets?.length) {
-      await sendMessage(chatId, "⚠️ Top-ups are temporarily unavailable. Please contact @luxsocks_supp.", [backRow()]);
+      await sendMessage(chatId, "⚠️ Top-ups are temporarily unavailable. Please contact @luxury_sock.", [backRow()]);
       return;
     }
     await sendMessage(
