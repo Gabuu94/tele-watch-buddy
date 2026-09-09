@@ -31,7 +31,7 @@ export const Route = createFileRoute("/api/public/nowpayments/ipn")({
 
         const payload = JSON.parse(raw);
         try {
-          await creditTopup(String(payload.payment_id), String(payload.payment_status));
+          await creditTopup(String(payload.payment_id), String(payload.payment_status), payload);
         } catch (err) {
           console.error("Top-up crediting failed", err);
           return new Response("error", { status: 500 });
