@@ -58,11 +58,12 @@ function AdminPage() {
   });
 
   const review = useMutation({
-    mutationFn: (vars: { id: string; approve: boolean }) => reviewFn({ data: vars }),
+    mutationFn: (vars: { id: string; approve: boolean; amount?: number }) => reviewFn({ data: vars }),
     onSuccess: () => queryClient.invalidateQueries(),
   });
 
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [received, setReceived] = useState<Record<string, string>>({});
 
   if (status.isLoading) {
     return <main className="p-10 text-muted-foreground">Loading…</main>;
@@ -225,7 +226,24 @@ function AdminPage() {
                   <Badge variant={t.status === "finished" ? "default" : "secondary"}>{t.status}</Badge>
                   {t.status !== "finished" && t.status !== "rejected" ? (
                     <>
-                      <Button size="sm" onClick={() => review.mutate({ id: t.id, approve: true })}>
+                      <Input
+                        className="w-32"
+                        placeholder={`Received ${money(t.amount_usd)}`}
+                        value={received[t.id] ?? ""}
+                        onChange={(e) => setReceived({ ...received, [t.id]: e.target.value })}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          const amount = Number(received[t.id]);
+                          review.mutate({
+                            id: t.id,
+                            approve: true,
+                            ...(Number.isFinite(amount) && amount > 0 ? { amount } : {}),
+                          });
+                          setReceived({ ...received, [t.id]: "" });
+                        }}
+                      >
                         Credit
                       </Button>
                       <Button

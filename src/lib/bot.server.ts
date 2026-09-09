@@ -726,7 +726,7 @@ async function createTopup(user: BotUser, chatId: number, walletId: string, amou
   );
 }
 
-export async function creditTopupById(topupId: string) {
+export async function creditTopupById(topupId: string, creditedUsd?: number) {
   const sb = db();
   const { data: topup } = await sb.from("topups").select("*").eq("id", topupId).maybeSingle();
   if (!topup) return;
@@ -736,13 +736,29 @@ export async function creditTopupById(topupId: string) {
   const { data: botUser } = await sb.from("bot_users").select("*").eq("id", t.bot_user_id).maybeSingle();
   if (!botUser) return;
   const u = botUser as any;
-  const newBalance = Number(u.balance) + Number(t.amount_usd);
+
+  const requested = Number(t.amount_usd);
+  const received =
+    Number.isFinite(Number(creditedUsd)) && Number(creditedUsd) > 0
+      ? Math.round(Number(creditedUsd) * 100) / 100
+      : requested;
+  const short = received + 0.01 < requested;
+
+  const newBalance = Number(u.balance) + received;
   await sb.from("bot_users").update({ balance: newBalance }).eq("id", u.id);
-  await sb.from("topups").update({ credited_at: new Date().toISOString(), status: "finished" }).eq("id", t.id);
+  await sb
+    .from("topups")
+    .update({
+      credited_at: new Date().toISOString(),
+      status: "finished",
+      amount_usd: received,
+      admin_note: short ? `Partial payment: requested ${money(requested)}, received ${money(received)}` : t.admin_note,
+    })
+    .eq("id", t.id);
 
   if (u.referred_by) {
     const percent = await setting("referral_percent", 5);
-    const bonus = (Number(t.amount_usd) * percent) / 100;
+    const bonus = (received * percent) / 100;
     const { data: ref } = await sb.from("bot_users").select("*").eq("id", u.referred_by).maybeSingle();
     if (ref) {
       const r = ref as any;
@@ -758,18 +774,37 @@ export async function creditTopupById(topupId: string) {
 
   await sendMessage(
     u.telegram_id,
-    `✅ Payment received: <b>${money(t.amount_usd)}</b>\n💰 New balance: <b>${money(newBalance)}</b>`,
+    short
+      ? `⚠️ Partial payment received.\nExpected: <b>${money(requested)}</b>\nReceived: <b>${money(received)}</b>\n💰 New balance: <b>${money(newBalance)}</b>\n\nTop up again to cover the difference.`
+      : `✅ Payment received: <b>${money(received)}</b>\n💰 New balance: <b>${money(newBalance)}</b>`,
     [[{ text: "Main menu", callback_data: "menu" }]],
   );
 }
 
-export async function creditTopup(providerId: string, status: string) {
+export async function creditTopup(providerId: string, status: string, payload?: any) {
   const sb = db();
-  const { data: topup } = await sb.from("topups").select("id, credited_at").eq("provider_id", providerId).maybeSingle();
+  const { data: topup } = await sb
+    .from("topups")
+    .select("id, credited_at, amount_usd, pay_amount")
+    .eq("provider_id", providerId)
+    .maybeSingle();
   if (!topup) return;
   const t = topup as any;
   await sb.from("topups").update({ status }).eq("id", t.id);
-  if (status !== "finished" && status !== "confirmed") return;
+  if (status !== "finished" && status !== "confirmed" && status !== "partially_paid") return;
   if (t.credited_at) return;
-  await creditTopupById(t.id);
+
+  // Work out how much actually landed, in USD.
+  let creditedUsd: number | undefined;
+  const outcome = Number(payload?.outcome_amount);
+  const actuallyPaid = Number(payload?.actually_paid);
+  const payAmount = Number(payload?.pay_amount ?? t.pay_amount);
+  const priceAmount = Number(payload?.price_amount ?? t.amount_usd);
+  if (Number.isFinite(actuallyPaid) && actuallyPaid > 0 && Number.isFinite(payAmount) && payAmount > 0) {
+    creditedUsd = (actuallyPaid / payAmount) * priceAmount;
+  } else if (Number.isFinite(outcome) && outcome > 0 && String(payload?.outcome_currency ?? "").startsWith("usd")) {
+    creditedUsd = outcome;
+  }
+
+  await creditTopupById(t.id, creditedUsd);
 }
