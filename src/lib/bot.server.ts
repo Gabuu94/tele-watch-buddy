@@ -40,7 +40,7 @@ type BotUser = {
   telegram_id: number;
   balance: number;
   rules_accepted: boolean;
-  state: Record<string, any>;
+  state: any;
 };
 
 async function getUser(from: any): Promise<BotUser> {
@@ -215,7 +215,7 @@ async function handleCallback(cq: any) {
   }
 
   if (data.startsWith("cat:")) {
-    const category = CATEGORIES[Number(data.slice(4))];
+    const category = CATEGORIES[Number(data.slice(4))] ?? CATEGORIES[0]!;
     await setState(user.id, { ...user.state, category });
     const rows = await distinct("continent", { category });
     await sendMessage(
@@ -298,7 +298,7 @@ function maskIp(ip: string) {
 }
 
 async function distinct(column: "continent" | "country" | "region", filters: Record<string, string>) {
-  let query = db().from("proxies").select(column).eq("sold", false);
+  let query: any = db().from("proxies").select(column).eq("sold", false);
   for (const [k, v] of Object.entries(filters)) query = query.eq(k, v);
   const { data } = await query.limit(2000);
   return Array.from(new Set(((data ?? []) as any[]).map((r) => r[column]))).sort();
