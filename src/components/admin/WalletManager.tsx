@@ -103,6 +103,35 @@ export function WalletManager() {
       <div className="space-y-3">
         <Card>
           <CardHeader>
+            <CardTitle className="text-base">NOWPayments (automatic top-ups)</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Paste your API key from nowpayments.io → Settings → API keys. Once saved, buyers get an "Pay
+              automatically" option and their balance is credited instantly after the payment confirms.
+            </p>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-end gap-3">
+            <div className="min-w-0 flex-1 space-y-1">
+              <Label className="text-xs">NOWPayments API key</Label>
+              <Input
+                type="password"
+                placeholder="Paste your NOWPayments API key"
+                value={npKey}
+                onChange={(e) => setNpKey(e.target.value)}
+              />
+            </div>
+            <Button onClick={() => setSetting.mutate({ key: "nowpayments_api_key", value: npKey })}>
+              {settings.data?.["nowpayments_api_key"] ? "Update key" : "Activate"}
+            </Button>
+            {settings.data?.["nowpayments_api_key"] ? (
+              <Badge variant="default">automatic top-ups live</Badge>
+            ) : (
+              <Badge variant="outline">not active</Badge>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle className="text-base">Shop settings</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap items-end gap-3">
