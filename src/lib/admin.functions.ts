@@ -161,3 +161,131 @@ export const deleteProxy = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+export const bulkAddProxies = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { category: string; text: string; price: number; revealPrice: number }) => input)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const rows: any[] = [];
+    const errors: string[] = [];
+    for (const raw of data.text.split("\n")) {
+      const line = raw.trim();
+      if (!line) continue;
+      // ip:port:login:pass:continent:country:region:city:isp:zip:ping
+      const p = line.split(":").map((v) => v.trim());
+      if (p.length < 10) {
+        errors.push(line);
+        continue;
+      }
+      rows.push({
+        category: data.category,
+        ip: p[0],
+        port: Number(p[1]) || 8080,
+        login: p[2],
+        password: p[3],
+        continent: p[4],
+        country: p[5],
+        region: p[6],
+        city: p[7],
+        isp: p[8],
+        zip: p[9],
+        ping: Number(p[10]) || 50,
+        price: data.price,
+        reveal_price: data.revealPrice,
+      });
+    }
+    if (rows.length) {
+      const { error } = await supabaseAdmin.from("proxies").insert(rows);
+      if (error) throw new Error(error.message);
+    }
+    return { added: rows.length, skipped: errors.length };
+  });
+
+export const listWallets = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.from("wallets").select("*").order("network");
+    if (error) throw new Error(error.message);
+    return data as any[];
+  });
+
+export const saveWallet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      id?: string;
+      network: string;
+      currency: string;
+      address: string;
+      memo?: string;
+      active: boolean;
+    }) => input,
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { id, ...fields } = data;
+    if (id) {
+      const { error } = await supabaseAdmin.from("wallets").update(fields).eq("id", id);
+      if (error) throw new Error(error.message);
+      return { id };
+    }
+    const { data: row, error } = await supabaseAdmin.from("wallets").insert(fields).select("id").single();
+    if (error) throw new Error(error.message);
+    return { id: (row as any).id as string };
+  });
+
+export const deleteWallet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id: string }) => input)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("wallets").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin.from("settings").select("*");
+    const map: Record<string, string> = {};
+    for (const row of (data ?? []) as any[]) map[row.key] = row.value;
+    return map;
+  });
+
+export const saveSetting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { key: string; value: string }) => input)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("settings")
+      .upsert({ key: data.key, value: data.value }, { onConflict: "key" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const approveTopup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id: string; approve: boolean }) => input)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    if (!data.approve) {
+      const { error } = await supabaseAdmin.from("topups").update({ status: "rejected" }).eq("id", data.id);
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+    const { creditTopupById } = await import("@/lib/bot.server");
+    await creditTopupById(data.id);
+    return { ok: true };
+  });
