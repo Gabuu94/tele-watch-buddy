@@ -58,11 +58,12 @@ function AdminPage() {
   });
 
   const review = useMutation({
-    mutationFn: (vars: { id: string; approve: boolean }) => reviewFn({ data: vars }),
+    mutationFn: (vars: { id: string; approve: boolean; amount?: number }) => reviewFn({ data: vars }),
     onSuccess: () => queryClient.invalidateQueries(),
   });
 
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [received, setReceived] = useState<Record<string, string>>({});
 
   if (status.isLoading) {
     return <main className="p-10 text-muted-foreground">Loading…</main>;
