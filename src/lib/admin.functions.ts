@@ -276,7 +276,7 @@ export const saveSetting = createServerFn({ method: "POST" })
 
 export const approveTopup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { id: string; approve: boolean }) => input)
+  .inputValidator((input: { id: string; approve: boolean; amount?: number }) => input)
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -286,7 +286,8 @@ export const approveTopup = createServerFn({ method: "POST" })
       return { ok: true };
     }
     const { creditTopupById } = await import("@/lib/bot.server");
-    await creditTopupById(data.id);
+    const amount = Number(data.amount);
+    await creditTopupById(data.id, Number.isFinite(amount) && amount > 0 ? amount : undefined);
     return { ok: true };
   });
 
