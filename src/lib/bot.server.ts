@@ -93,7 +93,7 @@ function mainMenuKeyboard(): Button[][] {
     ],
     [{ text: "🤝 Referral program", callback_data: "ref" }],
     [{ text: "📜 Rules", callback_data: "rules" }],
-    [{ text: "🆘 Support", url: "https://t.me/luxsocks_supp" } as any],
+    [{ text: "🆘 Support", url: "https://t.me/luxury_sock" } as any],
   ];
 }
 
@@ -131,7 +131,7 @@ async function handleMessage(message: any) {
     await sendMessage(
       chatId,
       "💎 <b>Luxury Socks</b> 💎 — premium residential & mobile proxies, instant delivery.\n\n" +
-        "📮 Support: @luxsocks_supp\n" +
+        "📮 Support: @luxury_sock\n" +
         `💰 Your balance: <b>${money(user.balance)}</b>`,
     );
     if (!user.rules_accepted) return askRules(chatId);
@@ -153,7 +153,7 @@ async function handleMessage(message: any) {
     await setState(user.id, { awaiting: null, amount });
     const { data: wallets } = await db().from("wallets").select("*").eq("active", true).order("network");
     if (!wallets?.length) {
-      await sendMessage(chatId, "⚠️ Top-ups are temporarily unavailable. Please contact @luxsocks_supp.", [backRow()]);
+      await sendMessage(chatId, "⚠️ Top-ups are temporarily unavailable. Please contact @luxury_sock.", [backRow()]);
       return;
     }
     await sendMessage(
@@ -397,12 +397,55 @@ async function handleCallback(cq: any) {
     return;
   }
 
-  if (data.startsWith("show:") || data.startsWith("buyp:")) {
-    const kind = data.startsWith("buyp:") ? "buy" : "reveal";
-    const id = data.split(":")[1];
-    await purchase(user, chatId, id!, kind);
+  if (data.startsWith("per:")) {
+    const id = data.split(":")[1]!;
+    await sendPeriodMenu(chatId, id);
     return;
   }
+
+  if (data.startsWith("show:") || data.startsWith("buyp:")) {
+    const kind = data.startsWith("buyp:") ? "buy" : "reveal";
+    const parts = data.split(":");
+    const id = parts[1];
+    const periodIdx = Number(parts[2] ?? 0);
+    await purchase(user, chatId, id!, kind, periodIdx);
+    return;
+  }
+}
+
+export const RENTAL_PERIODS = [
+  { label: "1 days", days: 1, multiplier: 1 },
+  { label: "3 days", days: 3, multiplier: 1.5 },
+  { label: "7 days", days: 7, multiplier: 2.2 },
+  { label: "14 days", days: 14, multiplier: 3.2 },
+  { label: "1 months", days: 30, multiplier: 5 },
+  { label: "3 months", days: 90, multiplier: 15 },
+  { label: "6 months", days: 180, multiplier: 25 },
+  { label: "1 yr.", days: 365, multiplier: 49 },
+];
+
+function periodPrice(base: number, idx: number) {
+  const p = RENTAL_PERIODS[idx] ?? RENTAL_PERIODS[0]!;
+  return Math.round(Number(base) * p.multiplier * 100) / 100;
+}
+
+async function sendPeriodMenu(chatId: number, proxyId: string) {
+  const { data: proxy } = await db().from("proxies").select("*").eq("id", proxyId).maybeSingle();
+  if (!proxy || (proxy as any).sold) {
+    await sendMessage(chatId, "❌ This proxy is no longer available.", [backRow("buy")]);
+    return;
+  }
+  const p = proxy as any;
+  await sendMessage(
+    chatId,
+    "⏱ <b>Select rental period:</b>",
+    RENTAL_PERIODS.map((per, i) => [
+      {
+        text: `⏱ ${per.label} · ${money(periodPrice(p.price, i))} · ${p.country}`,
+        callback_data: `buyp:${p.id}:${i}`,
+      },
+    ]).concat([[{ text: "◀️ All services", callback_data: "menu" }]]),
+  );
 }
 
 async function sendProxyCard(chatId: number, p: any) {
@@ -411,7 +454,7 @@ async function sendProxyCard(chatId: number, p: any) {
     `💎 IP <b>${maskIp(p.ip)}</b>\n🛰 ISP ${p.isp}\n🏙 CITY ${p.city}\n🏢 REGION ${p.region}\n📶 PING ${p.ping}\n🏤 ZIP ${p.zip}\n📍 COUNTRY ${p.country}`,
     [
       [{ text: `Show ip ${money(p.reveal_price)}`, callback_data: `show:${p.id}` }],
-      [{ text: `Buy ${money(p.price)}`, callback_data: `buyp:${p.id}` }],
+      [{ text: `Rent from ${money(p.price)}`, callback_data: `per:${p.id}` }],
     ],
   );
 }
@@ -473,7 +516,13 @@ async function distinct(column: "continent" | "country" | "region", filters: Rec
   return Array.from(new Set(((data ?? []) as any[]).map((r) => r[column]))).sort();
 }
 
-async function purchase(user: BotUser, chatId: number, proxyId: string, kind: "buy" | "reveal") {
+async function purchase(
+  user: BotUser,
+  chatId: number,
+  proxyId: string,
+  kind: "buy" | "reveal",
+  periodIdx = 0,
+) {
   const sb = db();
   const { data: proxy } = await sb.from("proxies").select("*").eq("id", proxyId).maybeSingle();
   if (!proxy || (proxy as any).sold) {
@@ -481,7 +530,8 @@ async function purchase(user: BotUser, chatId: number, proxyId: string, kind: "b
     return;
   }
   const p = proxy as any;
-  const price = Number(kind === "buy" ? p.price : p.reveal_price);
+  const period = RENTAL_PERIODS[periodIdx] ?? RENTAL_PERIODS[0]!;
+  const price = Number(kind === "buy" ? periodPrice(p.price, periodIdx) : p.reveal_price);
   const balance = Number(user.balance);
   if (balance < price) {
     await sendMessage(chatId, `❌ Not enough balance. Needed ${money(price)}, you have ${money(balance)}.`, [
@@ -511,20 +561,24 @@ async function purchase(user: BotUser, chatId: number, proxyId: string, kind: "b
     proxy_id: p.id,
     kind,
     price,
-    details: `${p.ip} ${p.city}, ${p.country}`,
+    details:
+      kind === "buy"
+        ? `${p.ip} ${p.city}, ${p.country} · ${period.label}`
+        : `${p.ip} ${p.city}, ${p.country}`,
   });
 
   if (kind === "reveal") {
     await sendMessage(chatId, `👁 Full IP: <code>${p.ip}</code>\n💰 Balance: <b>${money(newBalance)}</b>`, [
-      [{ text: `Buy ${money(p.price)}`, callback_data: `buyp:${p.id}` }],
+      [{ text: `Rent from ${money(p.price)}`, callback_data: `per:${p.id}` }],
       backRow("buy"),
     ]);
     return;
   }
 
+  const until = new Date(Date.now() + period.days * 86400000).toLocaleDateString();
   await sendMessage(
     chatId,
-    `✅ <b>Purchase complete</b>\n\n<code>${p.ip}:${p.port}:${p.login}:${p.password}</code>\n\n🏙 ${p.city}, ${p.country}\n🛰 ${p.isp}\n💰 Balance: <b>${money(newBalance)}</b>`,
+    `✅ <b>Purchase complete</b>\n\n<code>${p.ip}:${p.port}:${p.login}:${p.password}</code>\n\n🏙 ${p.city}, ${p.country}\n🛰 ${p.isp}\n⏱ Rental: <b>${period.label}</b> (until ${until})\n💰 Balance: <b>${money(newBalance)}</b>`,
     [backRow()],
   );
 }

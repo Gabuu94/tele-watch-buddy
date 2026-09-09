@@ -289,3 +289,86 @@ export const approveTopup = createServerFn({ method: "POST" })
     await creditTopupById(data.id);
     return { ok: true };
   });
+
+export const searchCustomers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { search?: string } | undefined) => input ?? {})
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    let query = supabaseAdmin
+      .from("bot_users")
+      .select("id, telegram_id, username, first_name, balance, referral_earned, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (data.search) {
+      const s = `%${data.search}%`;
+      const asNumber = Number(data.search.replace(/[^0-9]/g, ""));
+      const filters = [`username.ilike.${s}`, `first_name.ilike.${s}`];
+      if (Number.isFinite(asNumber) && asNumber > 0) filters.push(`telegram_id.eq.${asNumber}`);
+      query = query.or(filters.join(","));
+    }
+    const { data: rows, error } = await query;
+    if (error) throw new Error(error.message);
+    return rows as any[];
+  });
+
+export const getCustomerAccount = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { botUserId: string }) => input)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [user, orders, topups, referrals] = await Promise.all([
+      supabaseAdmin.from("bot_users").select("*").eq("id", data.botUserId).maybeSingle(),
+      supabaseAdmin
+        .from("orders")
+        .select("id, kind, price, details, created_at")
+        .eq("bot_user_id", data.botUserId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabaseAdmin
+        .from("topups")
+        .select("id, network, amount_usd, status, tx_hash, created_at")
+        .eq("bot_user_id", data.botUserId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabaseAdmin
+        .from("bot_users")
+        .select("id, telegram_id, username, created_at")
+        .eq("referred_by", data.botUserId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ]);
+    return {
+      user: user.data as any,
+      orders: (orders.data ?? []) as any[],
+      topups: (topups.data ?? []) as any[],
+      referrals: (referrals.data ?? []) as any[],
+    };
+  });
+
+export const saveWalletAddresses = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { entries: { network: string; currency: string; address: string; memo?: string }[] }) => input)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: existing } = await supabaseAdmin.from("wallets").select("id, network, currency");
+    let saved = 0;
+    for (const e of data.entries) {
+      const address = (e.address ?? "").trim();
+      const match = ((existing ?? []) as any[]).find(
+        (w) => w.network === e.network && w.currency === e.currency,
+      );
+      if (!address) {
+        if (match) await supabaseAdmin.from("wallets").delete().eq("id", match.id);
+        continue;
+      }
+      const fields = { network: e.network, currency: e.currency, address, memo: e.memo ?? null, active: true };
+      if (match) await supabaseAdmin.from("wallets").update(fields).eq("id", match.id);
+      else await supabaseAdmin.from("wallets").insert(fields);
+      saved += 1;
+    }
+    return { saved };
+  });

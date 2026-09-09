@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { ProxyManager } from "@/components/admin/ProxyManager";
 import { BulkUpload } from "@/components/admin/BulkUpload";
 import { WalletManager } from "@/components/admin/WalletManager";
+import { AddressBook } from "@/components/admin/AddressBook";
+import { CustomerAccounts } from "@/components/admin/CustomerAccounts";
 
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -136,6 +138,7 @@ function AdminPage() {
           <TabsTrigger value="proxies">Proxy stock</TabsTrigger>
           <TabsTrigger value="bulk">Bulk add</TabsTrigger>
           <TabsTrigger value="customers">Customers</TabsTrigger>
+          <TabsTrigger value="accounts">Buyer accounts</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="topups">Top-ups</TabsTrigger>
           <TabsTrigger value="payments">Wallets & settings</TabsTrigger>
@@ -241,7 +244,12 @@ function AdminPage() {
           {!data?.topups.length ? <p className="text-sm text-muted-foreground">No top-ups yet.</p> : null}
         </TabsContent>
 
-        <TabsContent value="payments">
+        <TabsContent value="accounts">
+          <CustomerAccounts />
+        </TabsContent>
+
+        <TabsContent value="payments" className="space-y-4">
+          <AddressBook />
           <WalletManager />
         </TabsContent>
 
