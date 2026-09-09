@@ -516,7 +516,13 @@ async function distinct(column: "continent" | "country" | "region", filters: Rec
   return Array.from(new Set(((data ?? []) as any[]).map((r) => r[column]))).sort();
 }
 
-async function purchase(user: BotUser, chatId: number, proxyId: string, kind: "buy" | "reveal") {
+async function purchase(
+  user: BotUser,
+  chatId: number,
+  proxyId: string,
+  kind: "buy" | "reveal",
+  periodIdx = 0,
+) {
   const sb = db();
   const { data: proxy } = await sb.from("proxies").select("*").eq("id", proxyId).maybeSingle();
   if (!proxy || (proxy as any).sold) {
@@ -524,7 +530,8 @@ async function purchase(user: BotUser, chatId: number, proxyId: string, kind: "b
     return;
   }
   const p = proxy as any;
-  const price = Number(kind === "buy" ? p.price : p.reveal_price);
+  const period = RENTAL_PERIODS[periodIdx] ?? RENTAL_PERIODS[0]!;
+  const price = Number(kind === "buy" ? periodPrice(p.price, periodIdx) : p.reveal_price);
   const balance = Number(user.balance);
   if (balance < price) {
     await sendMessage(chatId, `❌ Not enough balance. Needed ${money(price)}, you have ${money(balance)}.`, [
@@ -554,20 +561,24 @@ async function purchase(user: BotUser, chatId: number, proxyId: string, kind: "b
     proxy_id: p.id,
     kind,
     price,
-    details: `${p.ip} ${p.city}, ${p.country}`,
+    details:
+      kind === "buy"
+        ? `${p.ip} ${p.city}, ${p.country} · ${period.label}`
+        : `${p.ip} ${p.city}, ${p.country}`,
   });
 
   if (kind === "reveal") {
     await sendMessage(chatId, `👁 Full IP: <code>${p.ip}</code>\n💰 Balance: <b>${money(newBalance)}</b>`, [
-      [{ text: `Buy ${money(p.price)}`, callback_data: `buyp:${p.id}` }],
+      [{ text: `Rent from ${money(p.price)}`, callback_data: `per:${p.id}` }],
       backRow("buy"),
     ]);
     return;
   }
 
+  const until = new Date(Date.now() + period.days * 86400000).toLocaleDateString();
   await sendMessage(
     chatId,
-    `✅ <b>Purchase complete</b>\n\n<code>${p.ip}:${p.port}:${p.login}:${p.password}</code>\n\n🏙 ${p.city}, ${p.country}\n🛰 ${p.isp}\n💰 Balance: <b>${money(newBalance)}</b>`,
+    `✅ <b>Purchase complete</b>\n\n<code>${p.ip}:${p.port}:${p.login}:${p.password}</code>\n\n🏙 ${p.city}, ${p.country}\n🛰 ${p.isp}\n⏱ Rental: <b>${period.label}</b> (until ${until})\n💰 Balance: <b>${money(newBalance)}</b>`,
     [backRow()],
   );
 }
