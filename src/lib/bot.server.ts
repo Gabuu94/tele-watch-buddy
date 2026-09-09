@@ -774,18 +774,37 @@ export async function creditTopupById(topupId: string, creditedUsd?: number) {
 
   await sendMessage(
     u.telegram_id,
-    `✅ Payment received: <b>${money(t.amount_usd)}</b>\n💰 New balance: <b>${money(newBalance)}</b>`,
+    short
+      ? `⚠️ Partial payment received.\nExpected: <b>${money(requested)}</b>\nReceived: <b>${money(received)}</b>\n💰 New balance: <b>${money(newBalance)}</b>\n\nTop up again to cover the difference.`
+      : `✅ Payment received: <b>${money(received)}</b>\n💰 New balance: <b>${money(newBalance)}</b>`,
     [[{ text: "Main menu", callback_data: "menu" }]],
   );
 }
 
-export async function creditTopup(providerId: string, status: string) {
+export async function creditTopup(providerId: string, status: string, payload?: any) {
   const sb = db();
-  const { data: topup } = await sb.from("topups").select("id, credited_at").eq("provider_id", providerId).maybeSingle();
+  const { data: topup } = await sb
+    .from("topups")
+    .select("id, credited_at, amount_usd, pay_amount")
+    .eq("provider_id", providerId)
+    .maybeSingle();
   if (!topup) return;
   const t = topup as any;
   await sb.from("topups").update({ status }).eq("id", t.id);
-  if (status !== "finished" && status !== "confirmed") return;
+  if (status !== "finished" && status !== "confirmed" && status !== "partially_paid") return;
   if (t.credited_at) return;
-  await creditTopupById(t.id);
+
+  // Work out how much actually landed, in USD.
+  let creditedUsd: number | undefined;
+  const outcome = Number(payload?.outcome_amount);
+  const actuallyPaid = Number(payload?.actually_paid);
+  const payAmount = Number(payload?.pay_amount ?? t.pay_amount);
+  const priceAmount = Number(payload?.price_amount ?? t.amount_usd);
+  if (Number.isFinite(actuallyPaid) && actuallyPaid > 0 && Number.isFinite(payAmount) && payAmount > 0) {
+    creditedUsd = (actuallyPaid / payAmount) * priceAmount;
+  } else if (Number.isFinite(outcome) && outcome > 0 && String(payload?.outcome_currency ?? "").startsWith("usd")) {
+    creditedUsd = outcome;
+  }
+
+  await creditTopupById(t.id, creditedUsd);
 }
