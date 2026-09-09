@@ -124,16 +124,24 @@ function AdminPage() {
       </section>
 
       <Tabs defaultValue="proxies">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="proxies">Proxy stock</TabsTrigger>
+          <TabsTrigger value="bulk">Bulk add</TabsTrigger>
           <TabsTrigger value="customers">Customers</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="topups">Top-ups</TabsTrigger>
+          <TabsTrigger value="payments">Wallets & settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="proxies">
           <ProxyManager />
         </TabsContent>
+
+        <TabsContent value="bulk">
+          <BulkUpload />
+        </TabsContent>
+
+
 
 
 
@@ -192,18 +200,43 @@ function AdminPage() {
           {(data?.topups ?? []).map((t: any) => (
             <Card key={t.id}>
               <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-                <div>
+                <div className="min-w-0">
                   <p className="font-medium">
                     {money(t.amount_usd)} · {t.network}
                   </p>
-                  <p className="text-sm text-muted-foreground">{new Date(t.created_at).toLocaleString()}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t.bot_users?.username ? `@${t.bot_users.username}` : `ID ${t.bot_users?.telegram_id ?? "?"}`} ·{" "}
+                    {new Date(t.created_at).toLocaleString()}
+                  </p>
+                  {t.tx_hash ? <p className="truncate text-xs text-muted-foreground">TX {t.tx_hash}</p> : null}
                 </div>
-                <Badge variant={t.status === "finished" ? "default" : "secondary"}>{t.status}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant={t.status === "finished" ? "default" : "secondary"}>{t.status}</Badge>
+                  {t.status !== "finished" && t.status !== "rejected" ? (
+                    <>
+                      <Button size="sm" onClick={() => review.mutate({ id: t.id, approve: true })}>
+                        Credit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => review.mutate({ id: t.id, approve: false })}
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
           ))}
           {!data?.topups.length ? <p className="text-sm text-muted-foreground">No top-ups yet.</p> : null}
         </TabsContent>
+
+        <TabsContent value="payments">
+          <WalletManager />
+        </TabsContent>
+
       </Tabs>
     </main>
   );
