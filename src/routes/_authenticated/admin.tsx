@@ -3,13 +3,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { adjustBalance, claimFirstAdmin, getDashboard, getMyAdminStatus } from "@/lib/admin.functions";
+import { adjustBalance, approveTopup, claimFirstAdmin, getDashboard, getMyAdminStatus } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ProxyManager } from "@/components/admin/ProxyManager";
+import { BulkUpload } from "@/components/admin/BulkUpload";
+import { WalletManager } from "@/components/admin/WalletManager";
 
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -35,6 +37,7 @@ function AdminPage() {
   const dashboardFn = useServerFn(getDashboard);
   const claimFn = useServerFn(claimFirstAdmin);
   const adjustFn = useServerFn(adjustBalance);
+  const reviewFn = useServerFn(approveTopup);
 
   const status = useQuery({ queryKey: ["admin-status"], queryFn: () => statusFn({}) });
   const dashboard = useQuery({
@@ -50,6 +53,11 @@ function AdminPage() {
   const adjust = useMutation({
     mutationFn: (vars: { botUserId: string; amount: number }) => adjustFn({ data: vars }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] }),
+  });
+
+  const review = useMutation({
+    mutationFn: (vars: { id: string; approve: boolean }) => reviewFn({ data: vars }),
+    onSuccess: () => queryClient.invalidateQueries(),
   });
 
   const [amounts, setAmounts] = useState<Record<string, string>>({});

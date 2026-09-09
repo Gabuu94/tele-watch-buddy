@@ -58,7 +58,7 @@ export const getDashboard = createServerFn({ method: "GET" })
         .limit(50),
       supabaseAdmin
         .from("topups")
-        .select("id, network, amount_usd, status, created_at, bot_users(telegram_id, username)")
+        .select("id, network, amount_usd, status, tx_hash, pay_address, created_at, bot_users(telegram_id, username)")
         .order("created_at", { ascending: false })
         .limit(50),
     ]);
