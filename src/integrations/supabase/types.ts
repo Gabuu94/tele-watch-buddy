@@ -14,16 +14,236 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bot_users: {
+        Row: {
+          approved: boolean
+          balance: number
+          created_at: string
+          first_name: string | null
+          id: string
+          rules_accepted: boolean
+          state: Json
+          telegram_id: number
+          username: string | null
+        }
+        Insert: {
+          approved?: boolean
+          balance?: number
+          created_at?: string
+          first_name?: string | null
+          id?: string
+          rules_accepted?: boolean
+          state?: Json
+          telegram_id: number
+          username?: string | null
+        }
+        Update: {
+          approved?: boolean
+          balance?: number
+          created_at?: string
+          first_name?: string | null
+          id?: string
+          rules_accepted?: boolean
+          state?: Json
+          telegram_id?: number
+          username?: string | null
+        }
+        Relationships: []
+      }
+      orders: {
+        Row: {
+          bot_user_id: string
+          created_at: string
+          details: string | null
+          id: string
+          kind: string
+          price: number
+          proxy_id: string | null
+        }
+        Insert: {
+          bot_user_id: string
+          created_at?: string
+          details?: string | null
+          id?: string
+          kind?: string
+          price?: number
+          proxy_id?: string | null
+        }
+        Update: {
+          bot_user_id?: string
+          created_at?: string
+          details?: string | null
+          id?: string
+          kind?: string
+          price?: number
+          proxy_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_bot_user_id_fkey"
+            columns: ["bot_user_id"]
+            isOneToOne: false
+            referencedRelation: "bot_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_proxy_id_fkey"
+            columns: ["proxy_id"]
+            isOneToOne: false
+            referencedRelation: "proxies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proxies: {
+        Row: {
+          category: string
+          city: string
+          continent: string
+          country: string
+          created_at: string
+          id: string
+          ip: string
+          isp: string
+          login: string
+          password: string
+          ping: number
+          port: number
+          price: number
+          region: string
+          reveal_price: number
+          sold: boolean
+          zip: string
+        }
+        Insert: {
+          category: string
+          city: string
+          continent: string
+          country: string
+          created_at?: string
+          id?: string
+          ip: string
+          isp: string
+          login?: string
+          password?: string
+          ping?: number
+          port?: number
+          price?: number
+          region: string
+          reveal_price?: number
+          sold?: boolean
+          zip: string
+        }
+        Update: {
+          category?: string
+          city?: string
+          continent?: string
+          country?: string
+          created_at?: string
+          id?: string
+          ip?: string
+          isp?: string
+          login?: string
+          password?: string
+          ping?: number
+          port?: number
+          price?: number
+          region?: string
+          reveal_price?: number
+          sold?: boolean
+          zip?: string
+        }
+        Relationships: []
+      }
+      topups: {
+        Row: {
+          amount_usd: number
+          bot_user_id: string
+          created_at: string
+          credited_at: string | null
+          id: string
+          network: string
+          pay_address: string | null
+          pay_amount: number | null
+          pay_currency: string
+          provider: string
+          provider_id: string | null
+          status: string
+        }
+        Insert: {
+          amount_usd: number
+          bot_user_id: string
+          created_at?: string
+          credited_at?: string | null
+          id?: string
+          network: string
+          pay_address?: string | null
+          pay_amount?: number | null
+          pay_currency: string
+          provider?: string
+          provider_id?: string | null
+          status?: string
+        }
+        Update: {
+          amount_usd?: number
+          bot_user_id?: string
+          created_at?: string
+          credited_at?: string | null
+          id?: string
+          network?: string
+          pay_address?: string | null
+          pay_amount?: number | null
+          pay_currency?: string
+          provider?: string
+          provider_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topups_bot_user_id_fkey"
+            columns: ["bot_user_id"]
+            isOneToOne: false
+            referencedRelation: "bot_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +370,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const
