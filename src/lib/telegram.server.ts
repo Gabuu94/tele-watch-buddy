@@ -30,7 +30,7 @@ export async function tg<T = any>(method: string, body: Record<string, unknown>)
   return json as T;
 }
 
-export type Button = { text: string; callback_data: string };
+export type Button = { text: string; callback_data?: string; url?: string };
 
 export function sendMessage(chatId: number, text: string, keyboard?: Button[][]) {
   return tg("sendMessage", {
