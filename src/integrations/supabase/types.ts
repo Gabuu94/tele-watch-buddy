@@ -64,6 +64,56 @@ export type Database = {
           },
         ]
       }
+      number_orders: {
+        Row: {
+          bot_user_id: string
+          code: string | null
+          country: string
+          created_at: string
+          expires_at: string
+          id: string
+          phone: string
+          price: number
+          service: string
+          status: string
+          tier: string
+        }
+        Insert: {
+          bot_user_id: string
+          code?: string | null
+          country: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          phone: string
+          price?: number
+          service: string
+          status?: string
+          tier?: string
+        }
+        Update: {
+          bot_user_id?: string
+          code?: string | null
+          country?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          phone?: string
+          price?: number
+          service?: string
+          status?: string
+          tier?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "number_orders_bot_user_id_fkey"
+            columns: ["bot_user_id"]
+            isOneToOne: false
+            referencedRelation: "bot_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           bot_user_id: string
