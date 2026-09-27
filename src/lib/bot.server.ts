@@ -45,7 +45,18 @@ type BotUser = {
   referred_by: string | null;
   referral_earned: number;
   state: any;
+  approved: boolean;
 };
+
+async function sendSuspended(chatId: number): Promise<void> {
+  await sendMessage(
+    chatId,
+    "⛔ <b>Account suspended</b>\n\n" +
+      "Your account was flagged by our automated risk system for activity that violates the Luxury Socks terms of service, and access has been suspended.\n\n" +
+      "If you believe this is a mistake, contact our concierge and we'll review your case within 24 hours.",
+    [[{ text: "◎ Contact support · @luxury_sock", url: "https://t.me/luxury_sock" }]],
+  );
+}
 
 async function setting(key: string, fallback: number): Promise<number> {
   const { data } = await db().from("settings").select("value").eq("key", key).maybeSingle();
