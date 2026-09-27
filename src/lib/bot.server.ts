@@ -344,7 +344,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       `⚡ <b>AUTOMATIC PAYMENT</b>\n\nRequested amount  <b>${money(amount)}</b>\n\nSelect a coin. Your balance updates after network confirmation; partial payments are credited at the amount received.`,
-      NP_CURRENCIES.map(([code, label]) => [{ text: label, callback_data: `npc:${code}` }]).concat([backRow()]),
+      (NP_CURRENCIES.map(([code, label]) => [{ text: label, callback_data: `npc:${code}` }]) as Button[][]).concat([backRow()]),
     );
     return;
   }
@@ -397,7 +397,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       "✦ <b>THE COLLECTION</b>\n\nSelect a proxy category.",
-      CATEGORIES.map((c) => [{ text: CATEGORY_LABELS[c] ?? c, callback_data: `cat:${CATEGORIES.indexOf(c)}` }]).concat([
+      (CATEGORIES.map((c) => [{ text: CATEGORY_LABELS[c] ?? c, callback_data: `cat:${CATEGORIES.indexOf(c)}` }]) as Button[][]).concat([
         backRow(),
       ]),
     );
