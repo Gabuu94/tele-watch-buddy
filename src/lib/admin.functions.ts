@@ -86,7 +86,7 @@ export const adjustBalance = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: user, error } = await supabaseAdmin
       .from("bot_users")
-      .select("balance")
+      .select("balance, telegram_id")
       .eq("id", data.botUserId)
       .single();
     if (error) throw new Error(error.message);
@@ -96,6 +96,18 @@ export const adjustBalance = createServerFn({ method: "POST" })
       .update({ balance: next })
       .eq("id", data.botUserId);
     if (updateError) throw new Error(updateError.message);
+    try {
+      const { sendMessage } = await import("@/lib/telegram.server");
+      const delta = Number(data.amount);
+      const sign = delta >= 0 ? "+" : "−";
+      await sendMessage(
+        Number((user as any).telegram_id),
+        `💎 <b>BALANCE UPDATE</b>\n\nAn admin adjusted your balance by <b>${sign}$${Math.abs(delta).toFixed(2)}</b>.\n\nNew balance: <b>$${next.toFixed(2)}</b>`,
+        [[{ text: "✦ Open shop", callback_data: "menu" }]],
+      );
+    } catch (e) {
+      console.error("Balance notification failed:", e);
+    }
     return { balance: next };
   });
 
