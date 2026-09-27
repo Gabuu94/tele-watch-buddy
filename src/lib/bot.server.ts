@@ -818,3 +818,177 @@ export async function creditTopup(providerId: string, status: string, payload?: 
 
   await creditTopupById(t.id, creditedUsd);
 }
+
+// ================= Virtual numbers =================
+import { NUMBER_COUNTRIES, NUMBER_SERVICES, NUMBER_TIERS, generatePhone, numberPrice } from "./numbers";
+
+const PAGE = 14;
+
+function pager(prefix: string, page: number, total: number): Button[] {
+  const row: Button[] = [];
+  if (page > 0) row.push({ text: "← Prev", callback_data: `${prefix}${page - 1}` });
+  if ((page + 1) * PAGE < total) row.push({ text: "Next →", callback_data: `${prefix}${page + 1}` });
+  return row;
+}
+
+function pairs(buttons: Button[]): Button[][] {
+  const out: Button[][] = [];
+  for (let i = 0; i < buttons.length; i += 2) out.push(buttons.slice(i, i + 2));
+  return out;
+}
+
+async function handleNumbers(user: BotUser, chatId: number, data: string): Promise<boolean> {
+  if (data === "num" || data.startsWith("nsp:")) {
+    const page = data === "num" ? 0 : Number(data.slice(4)) || 0;
+    const slice = NUMBER_SERVICES.slice(page * PAGE, (page + 1) * PAGE);
+    const rows = pairs(slice.map((s) => ({ text: s.name, callback_data: `ns:${s.id}` })));
+    const nav = pager("nsp:", page, NUMBER_SERVICES.length);
+    if (nav.length) rows.push(nav);
+    rows.push(backRow());
+    await sendMessage(
+      chatId,
+      `☏ <b>VIRTUAL NUMBERS</b>\n<em>One-time SMS verification</em>\n\nChoose the service you need a code for.\nPage ${page + 1} of ${Math.ceil(NUMBER_SERVICES.length / PAGE)}`,
+      rows,
+    );
+    return true;
+  }
+
+  if (data.startsWith("ns:") || data.startsWith("ncp:")) {
+    const [svcId, pageStr] = data.startsWith("ns:") ? [data.slice(3), "0"] : data.slice(4).split("|");
+    const svc = NUMBER_SERVICES.find((s) => s.id === svcId);
+    if (!svc) return false;
+    const page = Number(pageStr) || 0;
+    const slice = NUMBER_COUNTRIES.slice(page * PAGE, (page + 1) * PAGE);
+    const rows = pairs(
+      slice.map((c) => ({ text: `${c.flag} ${c.name} · ${money(numberPrice(svc.id, c.id, "eco"))}`, callback_data: `nc:${svc.id}:${c.id}` })),
+    );
+    const nav = pager(`ncp:${svc.id}|`, page, NUMBER_COUNTRIES.length);
+    if (nav.length) rows.push(nav);
+    rows.push([{ text: "← Services", callback_data: "num" }]);
+    await sendMessage(chatId, `☏ <b>${html(svc.name.toUpperCase())}</b>\n\nChoose a country. Prices shown are from.`, rows);
+    return true;
+  }
+
+  if (data.startsWith("nc:")) {
+    const [, svcId, cId] = data.split(":");
+    const svc = NUMBER_SERVICES.find((s) => s.id === svcId);
+    const c = NUMBER_COUNTRIES.find((x) => x.id === cId);
+    if (!svc || !c) return false;
+    const stock = 180 + ((svc.base * 1000 + c.dial.length * 97) % 900);
+    await sendMessage(
+      chatId,
+      `☏ <b>${html(svc.name)}</b>  ·  ${c.flag} ${html(c.name)} (+${c.dial})\n\nIn stock  <b>${Math.round(stock)}</b> numbers\n\n` +
+        NUMBER_TIERS.map((t) => `<b>${t.label}</b> — ${money(numberPrice(svc.id, c.id, t.id))}\n<em>${t.note}</em>`).join("\n\n") +
+        `\n\nNo code received in time? Your balance is refunded.`,
+      [
+        ...NUMBER_TIERS.map((t) => [{ text: `${t.label} · ${money(numberPrice(svc.id, c.id, t.id))}`, callback_data: `nb:${svc.id}:${c.id}:${t.id}` }]),
+        [{ text: "← Countries", callback_data: `ns:${svc.id}` }],
+      ],
+    );
+    return true;
+  }
+
+  if (data.startsWith("nb:")) {
+    const [, svcId, cId, tierId] = data.split(":");
+    const svc = NUMBER_SERVICES.find((s) => s.id === svcId);
+    const c = NUMBER_COUNTRIES.find((x) => x.id === cId);
+    const tier = NUMBER_TIERS.find((t) => t.id === tierId);
+    if (!svc || !c || !tier) return false;
+    const price = numberPrice(svc.id, c.id, tier.id);
+    const balance = Number(user.balance);
+    if (balance < price) {
+      await sendMessage(chatId, `◈ <b>INSUFFICIENT BALANCE</b>\n\nPrice  <b>${money(price)}</b>\nAvailable  <b>${money(balance)}</b>`, [
+        [{ text: "↗ Add funds", callback_data: "topup" }],
+        backRow(),
+      ]);
+      return true;
+    }
+    const sb = db();
+    const minutes = tier.id === "pro" ? 30 : tier.id === "std" ? 20 : 15;
+    const phone = generatePhone(c.id);
+    await sb.from("bot_users").update({ balance: balance - price }).eq("id", user.id);
+    const { data: order } = await sb
+      .from("number_orders")
+      .insert({
+        bot_user_id: user.id,
+        service: svc.name,
+        country: c.name,
+        tier: tier.label,
+        price,
+        phone,
+        expires_at: new Date(Date.now() + minutes * 60000).toISOString(),
+      })
+      .select("id")
+      .single();
+    await sb.from("orders").insert({ bot_user_id: user.id, kind: "number", price, details: `${svc.name} · ${c.name} · ${phone}` });
+    await sendMessage(
+      chatId,
+      `✦ <b>NUMBER ACTIVATED</b>\n\n<code>${phone}</code>\n\nService  ${html(svc.name)}\nCountry  ${c.flag} ${html(c.name)}\nPlan  ${tier.label}\nValid for  <b>${minutes} min</b>\n\nEnter this number in ${html(svc.name)} and request the code. It will appear here automatically.\n\nRemaining balance  <b>${money(balance - price)}</b>`,
+      [
+        [{ text: "↻ Check for SMS", callback_data: `nrf:${(order as any)?.id}` }],
+        [{ text: "✕ Cancel & refund", callback_data: `ncx:${(order as any)?.id}` }],
+        backRow(),
+      ],
+    );
+    return true;
+  }
+
+  if (data.startsWith("nrf:") || data.startsWith("ncx:")) {
+    const id = data.slice(4);
+    const sb = db();
+    const { data: o } = await sb.from("number_orders").select("*").eq("id", id).eq("bot_user_id", user.id).maybeSingle();
+    if (!o) return true;
+    const order = o as any;
+    if (data.startsWith("ncx:")) {
+      if (order.status !== "waiting" || order.code) {
+        await sendMessage(chatId, "This number can no longer be cancelled.", [backRow()]);
+        return true;
+      }
+      const { data: done } = await sb.from("number_orders").update({ status: "refunded" }).eq("id", id).eq("status", "waiting").select("id");
+      if (done?.length) {
+        const { data: fresh } = await sb.from("bot_users").select("balance").eq("id", user.id).single();
+        const nb = Number((fresh as any).balance) + Number(order.price);
+        await sb.from("bot_users").update({ balance: nb }).eq("id", user.id);
+        await sendMessage(chatId, `✕ <b>CANCELLED</b>\n\n${money(order.price)} returned to your balance.\nBalance  <b>${money(nb)}</b>`, [
+          [{ text: "☏ Get another number", callback_data: "num" }],
+          backRow(),
+        ]);
+      }
+      return true;
+    }
+    if (order.code) {
+      await sendMessage(chatId, `✦ <b>SMS RECEIVED</b>\n\n<code>${html(order.phone)}</code>\nCode  <b><code>${html(order.code)}</code></b>`, [backRow()]);
+    } else if (order.status !== "waiting") {
+      await sendMessage(chatId, `This number is ${html(order.status)}.`, [backRow()]);
+    } else {
+      const left = Math.max(0, Math.round((new Date(order.expires_at).getTime() - Date.now()) / 60000));
+      await sendMessage(chatId, `◷ <b>WAITING FOR SMS</b>\n\n<code>${html(order.phone)}</code>\nTime left  <b>${left} min</b>`, [
+        [{ text: "↻ Check again", callback_data: `nrf:${id}` }],
+        [{ text: "✕ Cancel & refund", callback_data: `ncx:${id}` }],
+        backRow(),
+      ]);
+    }
+    return true;
+  }
+
+  if (data === "nmy") {
+    const { data: rows } = await db()
+      .from("number_orders")
+      .select("*")
+      .eq("bot_user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    const list = (rows ?? []) as any[];
+    const body = list.length
+      ? list.map((o) => `${html(o.service)} · ${html(o.country)}\n<code>${html(o.phone)}</code> · ${o.code ? `code <b>${html(o.code)}</b>` : html(o.status)}`).join("\n\n")
+      : "No numbers yet.";
+    await sendMessage(chatId, `◷ <b>MY NUMBERS</b>\n\n${body}`, [
+      ...list.filter((o) => o.status === "waiting").slice(0, 3).map((o) => [{ text: `↻ ${o.phone}`, callback_data: `nrf:${o.id}` }]),
+      [{ text: "☏ Get a number", callback_data: "num" }],
+      backRow(),
+    ]);
+    return true;
+  }
+
+  return false;
+}
