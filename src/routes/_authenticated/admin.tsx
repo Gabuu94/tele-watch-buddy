@@ -14,6 +14,7 @@ import { BulkUpload } from "@/components/admin/BulkUpload";
 import { WalletManager } from "@/components/admin/WalletManager";
 import { AddressBook } from "@/components/admin/AddressBook";
 import { CustomerAccounts } from "@/components/admin/CustomerAccounts";
+import { NumberOrders } from "@/components/admin/NumberOrders";
 
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -141,6 +142,7 @@ function AdminPage() {
           <TabsTrigger value="customers">Customers</TabsTrigger>
           <TabsTrigger value="accounts">Buyer accounts</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
+          <TabsTrigger value="numbers">Number orders</TabsTrigger>
           <TabsTrigger value="topups">Top-ups</TabsTrigger>
           <TabsTrigger value="payments">Wallets & settings</TabsTrigger>
         </TabsList>
@@ -260,6 +262,10 @@ function AdminPage() {
             </Card>
           ))}
           {!data?.topups.length ? <p className="text-sm text-muted-foreground">No top-ups yet.</p> : null}
+        </TabsContent>
+
+        <TabsContent value="numbers">
+          <NumberOrders />
         </TabsContent>
 
         <TabsContent value="accounts">
