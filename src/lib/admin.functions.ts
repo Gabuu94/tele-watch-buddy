@@ -385,3 +385,47 @@ export const saveWalletAddresses = createServerFn({ method: "POST" })
     }
     return { saved };
   });
+
+export const listNumberOrders = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { data, error } = await context.supabase
+      .from("number_orders")
+      .select("id, service, country, tier, price, phone, status, code, expires_at, created_at, bot_users(username, telegram_id)")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as any[];
+  });
+
+export const resolveNumberOrder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { id: string; action: "code" | "refund"; code?: string; phone?: string }) => input)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { sendMessage } = await import("@/lib/telegram.server");
+    const { data: o, error } = await supabaseAdmin
+      .from("number_orders")
+      .select("*, bot_users(id, balance, telegram_id)")
+      .eq("id", data.id)
+      .single();
+    if (error) throw new Error(error.message);
+    const order = o as any;
+    const chat = Number(order.bot_users.telegram_id);
+    if (data.action === "refund") {
+      if (order.status !== "waiting") throw new Error("Already closed");
+      await supabaseAdmin.from("number_orders").update({ status: "refunded" }).eq("id", data.id);
+      const nb = Number(order.bot_users.balance) + Number(order.price);
+      await supabaseAdmin.from("bot_users").update({ balance: nb }).eq("id", order.bot_users.id);
+      await sendMessage(chat, `✕ <b>NUMBER REFUNDED</b>\n\n${order.phone} · ${order.service}\n$${Number(order.price).toFixed(2)} returned.\nBalance <b>$${nb.toFixed(2)}</b>`, [[{ text: "☏ Get another number", callback_data: "num" }]]).catch(() => {});
+      return { ok: true };
+    }
+    const code = String(data.code ?? "").trim();
+    if (!code) throw new Error("Enter the code");
+    const phone = String(data.phone ?? "").trim() || order.phone;
+    await supabaseAdmin.from("number_orders").update({ status: "received", code, phone }).eq("id", data.id);
+    await sendMessage(chat, `✦ <b>SMS RECEIVED</b>\n\n${order.service} · <code>${phone}</code>\n\nYour code  <b><code>${code.replace(/</g, "")}</code></b>`, [[{ text: "◷ My numbers", callback_data: "nmy" }]]).catch(() => {});
+    return { ok: true };
+  });
