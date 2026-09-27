@@ -101,8 +101,9 @@ function html(value: unknown) {
 
 function mainMenuKeyboard(): Button[][] {
   return [
-    [{ text: "✦ Explore proxy collection", callback_data: "buy" }],
-    [{ text: "⌕ Search inventory", callback_data: "search" }],
+    [{ text: "✦ Open store", callback_data: "store" }],
+    [{ text: "☏ Virtual numbers", callback_data: "num" }, { text: "⌕ Search proxies", callback_data: "search" }],
+    [{ text: "◷ My numbers", callback_data: "nmy" }],
     [{ text: "◈ My account", callback_data: "me" }, { text: "↗ Add funds", callback_data: "topup" }],
     [{ text: "◷ Order history", callback_data: "hist" }, { text: "◇ Referrals", callback_data: "ref" }],
     [
@@ -365,6 +366,17 @@ async function handleCallback(cq: any) {
     await sendMessage(chatId, "◷ <b>SUBMIT PAYMENT</b>\n\nSend the transaction hash (TXID) for review.", [backRow()]);
     return;
   }
+
+  if (data === "store") {
+    await sendMessage(chatId, "✦ <b>THE STORE</b>\n\nWhat would you like today?", [
+      [{ text: "◈ Proxies · private SOCKS5 / HTTP", callback_data: "buy" }],
+      [{ text: "☏ Virtual numbers · SMS verification", callback_data: "num" }],
+      backRow(),
+    ]);
+    return;
+  }
+
+  if (await handleNumbers(user, chatId, data)) return;
 
   if (data === "buy") {
     await sendMessage(
