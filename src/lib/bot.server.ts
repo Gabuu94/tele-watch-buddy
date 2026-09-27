@@ -162,7 +162,7 @@ async function handleMessage(message: any) {
     const min = await setting("min_deposit", 50);
     const amount = Number(text.replace(",", "."));
     if (!Number.isFinite(amount) || amount < min) {
-      await sendMessage(chatId, `❌ Minimum deposit is <b>${money(min)}</b>. Please enter a bigger amount.`);
+    await sendMessage(chatId, `↗ <b>ADD FUNDS</b>\n\nMinimum deposit is <b>${money(min)}</b>. Please enter a higher amount.`);
       return;
     }
     await setState(user.id, { awaiting: null, amount });
@@ -173,9 +173,9 @@ async function handleMessage(message: any) {
       return;
     }
     const rows: Button[][] = [];
-    if (npEnabled) rows.push([{ text: "⚡ Pay automatically (instant credit)", callback_data: "npauto" }]);
+    if (npEnabled) rows.push([{ text: "⚡ Automatic crypto payment", callback_data: "npauto" }]);
     for (const w of (wallets ?? []) as any[]) {
-      rows.push([{ text: `${w.network} (${String(w.currency).toUpperCase()})`, callback_data: `net:${w.id}` }]);
+      rows.push([{ text: `${w.network} · ${String(w.currency).toUpperCase()} (manual review)`, callback_data: `net:${w.id}` }]);
     }
     rows.push(backRow());
     await sendMessage(chatId, `↗ <b>ADD FUNDS</b>\n\nRequested amount  <b>${money(amount)}</b>\n\nSelect a payment method.`, rows);
@@ -327,7 +327,7 @@ async function handleCallback(cq: any) {
     }
     await sendMessage(
       chatId,
-      `⚡ <b>Automatic payment — ${money(amount)}</b>\n\nPick the coin you want to pay with. Your balance is credited automatically once the payment confirms.`,
+      `⚡ <b>AUTOMATIC PAYMENT</b>\n\nRequested amount  <b>${money(amount)}</b>\n\nSelect a coin. Your balance updates after network confirmation; partial payments are credited at the amount received.`,
       NP_CURRENCIES.map(([code, label]) => [{ text: label, callback_data: `npc:${code}` }]).concat([backRow()]),
     );
     return;
@@ -575,8 +575,8 @@ async function purchase(
   const price = Number(kind === "buy" ? periodPrice(p.price, periodIdx) : p.reveal_price);
   const balance = Number(user.balance);
   if (balance < price) {
-    await sendMessage(chatId, `❌ Not enough balance. Needed ${money(price)}, you have ${money(balance)}.`, [
-      [{ text: "💵 Top up balance 💵", callback_data: "topup" }],
+    await sendMessage(chatId, `◈ <b>INSUFFICIENT BALANCE</b>\n\nPrice  <b>${money(price)}</b>\nAvailable  <b>${money(balance)}</b>`, [
+      [{ text: "↗ Add funds", callback_data: "topup" }],
       backRow(),
     ]);
     return;
@@ -665,7 +665,7 @@ async function createNowpayment(user: BotUser, chatId: number, currency: string,
     await sb.from("topups").update({ status: "failed", admin_note: JSON.stringify(body).slice(0, 500) }).eq("id", topupId);
     await sendMessage(
       chatId,
-      `❌ Could not create the payment (${body.message ?? "provider error"}). Try another coin or method.`,
+      `Payment could not be started right now. Please try another coin or payment method.`,
       [backRow()],
     );
     return;
@@ -681,9 +681,9 @@ async function createNowpayment(user: BotUser, chatId: number, currency: string,
   if (body.pay_address) await sendPhoto(chatId, qrUrl(String(body.pay_address)));
   await sendMessage(
     chatId,
-    `⚡ <b>Top up ${money(amount)} via ${label}</b>\n\nSend exactly\n<code>${body.pay_amount} ${String(body.pay_currency).toUpperCase()}</code>\nto\n<code>${body.pay_address}</code>` +
-      (body.payin_extra_id ? `\nMEMO/TAG <code>${body.payin_extra_id}</code>` : "") +
-      `\n\n✅ Your balance is credited <b>automatically</b> after network confirmation — no need to send anything else.`,
+    `⚡ <b>YOUR PAYMENT DETAILS</b>\n\nMethod  ${html(label)}\nRequested  <b>${money(amount)}</b>\nSend  <code>${html(body.pay_amount)} ${html(String(body.pay_currency).toUpperCase())}</code>\n\nAddress\n<code>${html(body.pay_address)}</code>` +
+      (body.payin_extra_id ? `\nMemo / tag  <code>${html(body.payin_extra_id)}</code>` : "") +
+      `\n\nYour balance updates automatically after confirmation. If you send less, only the value received will be credited.`,
     [backRow()],
   );
 }
@@ -717,10 +717,10 @@ async function createTopup(user: BotUser, chatId: number, walletId: string, amou
   await sendPhoto(chatId, qrUrl(w.address));
   await sendMessage(
     chatId,
-    `💵 <b>Top up ${money(amount)}</b>\n\nNETWORK ${w.network}\nCOIN ${String(w.currency).toUpperCase()}\nADDRESS\n<code>${w.address}</code>` +
-      (w.memo ? `\nMEMO/TAG <code>${w.memo}</code>` : "") +
-      `\n\nSend the exact USD value in ${String(w.currency).toUpperCase()}, then tap <b>I have paid</b> and send your transaction hash. Balance is credited after confirmation.`,
-    [[{ text: "✅ I have paid", callback_data: "paid" }], backRow()],
+    `◈ <b>MANUAL PAYMENT DETAILS</b>\n\nRequested  <b>${money(amount)}</b>\nNetwork  ${html(w.network)}\nCoin  ${html(String(w.currency).toUpperCase())}\n\nAddress\n<code>${html(w.address)}</code>` +
+      (w.memo ? `\nMemo / tag  <code>${html(w.memo)}</code>` : "") +
+      `\n\nAfter sending, submit your transaction hash below. Your balance updates after the received amount is verified.`,
+    [[{ text: "✓ Submit transaction hash", callback_data: "paid" }], backRow()],
   );
 }
 
