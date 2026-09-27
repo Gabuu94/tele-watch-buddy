@@ -411,7 +411,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       `✦ <b>${html(category)}</b>\n\nSelect a continent.`,
-      rows.map((v) => [{ text: v, callback_data: `con:${v}` }]).concat([backRow("buy")]),
+      (rows.map((v) => [{ text: v, callback_data: `con:${v}` }]) as Button[][]).concat([backRow("buy")]),
     );
     return;
   }
@@ -424,7 +424,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       `🌍 <b>${html(continent)}</b>\n\nSelect a country.`,
-      rows.map((v) => [{ text: v, callback_data: `cou:${v}` }]).concat([backRow("buy")]),
+      (rows.map((v) => [{ text: v, callback_data: `cou:${v}` }]) as Button[][]).concat([backRow("buy")]),
     );
     return;
   }
@@ -437,7 +437,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       `📍 <b>${html(country)}</b>\n\nSelect a region.`,
-      rows.map((v) => [{ text: v, callback_data: `reg:${v}` }]).concat([backRow("buy")]),
+      (rows.map((v) => [{ text: v, callback_data: `reg:${v}` }]) as Button[][]).concat([backRow("buy")]),
     );
     return;
   }
