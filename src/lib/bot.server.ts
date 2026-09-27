@@ -146,6 +146,8 @@ async function handleMessage(message: any) {
   const text: string = message.text.trim();
   const user = await getUser(message.from);
 
+  if (user.approved === false) return sendSuspended(chatId);
+
   if (text.startsWith("/start")) {
     const payload = text.split(" ")[1];
     if (payload?.startsWith("ref") && !user.referred_by) {
@@ -235,6 +237,8 @@ async function handleCallback(cq: any) {
   const data: string = cq.data ?? "";
   const user = await getUser(cq.from);
   await answerCallback(cq.id);
+
+  if (user.approved === false) return sendSuspended(chatId);
 
   if (data === "accept") {
     await db().from("bot_users").update({ rules_accepted: true }).eq("id", user.id);
