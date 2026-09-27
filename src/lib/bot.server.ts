@@ -45,7 +45,18 @@ type BotUser = {
   referred_by: string | null;
   referral_earned: number;
   state: any;
+  approved: boolean;
 };
+
+async function sendSuspended(chatId: number): Promise<void> {
+  await sendMessage(
+    chatId,
+    "⛔ <b>Account suspended</b>\n\n" +
+      "Your account was flagged by our automated risk system for activity that violates the Luxury Socks terms of service, and access has been suspended.\n\n" +
+      "If you believe this is a mistake, contact our concierge and we'll review your case within 24 hours.",
+    [[{ text: "◎ Contact support · @luxury_sock", url: "https://t.me/luxury_sock" }]],
+  );
+}
 
 async function setting(key: string, fallback: number): Promise<number> {
   const { data } = await db().from("settings").select("value").eq("key", key).maybeSingle();
@@ -134,6 +145,8 @@ async function handleMessage(message: any) {
   const chatId = message.chat.id;
   const text: string = message.text.trim();
   const user = await getUser(message.from);
+
+  if (user.approved === false) return sendSuspended(chatId);
 
   if (text.startsWith("/start")) {
     const payload = text.split(" ")[1];
@@ -224,6 +237,8 @@ async function handleCallback(cq: any) {
   const data: string = cq.data ?? "";
   const user = await getUser(cq.from);
   await answerCallback(cq.id);
+
+  if (user.approved === false) return sendSuspended(chatId);
 
   if (data === "accept") {
     await db().from("bot_users").update({ rules_accepted: true }).eq("id", user.id);
@@ -329,7 +344,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       `⚡ <b>AUTOMATIC PAYMENT</b>\n\nRequested amount  <b>${money(amount)}</b>\n\nSelect a coin. Your balance updates after network confirmation; partial payments are credited at the amount received.`,
-      NP_CURRENCIES.map(([code, label]) => [{ text: label, callback_data: `npc:${code}` }]).concat([backRow()]),
+      (NP_CURRENCIES.map(([code, label]) => [{ text: label, callback_data: `npc:${code}` }]) as Button[][]).concat([backRow()]),
     );
     return;
   }
@@ -382,7 +397,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       "✦ <b>THE COLLECTION</b>\n\nSelect a proxy category.",
-      CATEGORIES.map((c) => [{ text: CATEGORY_LABELS[c] ?? c, callback_data: `cat:${CATEGORIES.indexOf(c)}` }]).concat([
+      (CATEGORIES.map((c) => [{ text: CATEGORY_LABELS[c] ?? c, callback_data: `cat:${CATEGORIES.indexOf(c)}` }]) as Button[][]).concat([
         backRow(),
       ]),
     );
@@ -396,7 +411,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       `✦ <b>${html(category)}</b>\n\nSelect a continent.`,
-      rows.map((v) => [{ text: v, callback_data: `con:${v}` }]).concat([backRow("buy")]),
+      (rows.map((v) => [{ text: v, callback_data: `con:${v}` }]) as Button[][]).concat([backRow("buy")]),
     );
     return;
   }
@@ -409,7 +424,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       `🌍 <b>${html(continent)}</b>\n\nSelect a country.`,
-      rows.map((v) => [{ text: v, callback_data: `cou:${v}` }]).concat([backRow("buy")]),
+      (rows.map((v) => [{ text: v, callback_data: `cou:${v}` }]) as Button[][]).concat([backRow("buy")]),
     );
     return;
   }
@@ -422,7 +437,7 @@ async function handleCallback(cq: any) {
     await sendMessage(
       chatId,
       `📍 <b>${html(country)}</b>\n\nSelect a region.`,
-      rows.map((v) => [{ text: v, callback_data: `reg:${v}` }]).concat([backRow("buy")]),
+      (rows.map((v) => [{ text: v, callback_data: `reg:${v}` }]) as Button[][]).concat([backRow("buy")]),
     );
     return;
   }
