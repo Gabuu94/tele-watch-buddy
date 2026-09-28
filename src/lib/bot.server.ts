@@ -238,13 +238,16 @@ async function handleCallback(cq: any) {
   const user = await getUser(cq.from);
   await answerCallback(cq.id);
 
-  if (user.approved === false) return sendSuspended(chatId);
-
   if (data === "accept") {
-    await db().from("bot_users").update({ rules_accepted: true }).eq("id", user.id);
-    await sendMessage(chatId, "✦ <b>Welcome in.</b>\nThe collection is ready for you.");
+    await db().from("bot_users").update({ rules_accepted: true, approved: true }).eq("id", user.id);
+    await sendMessage(
+      chatId,
+      "✦ <b>Terms accepted.</b>\n\nYour account has been fully restored — welcome back to Luxury Socks.\nConcierge  @luxury_sock",
+    );
     return sendMainMenu(chatId);
   }
+
+  if (user.approved === false) return sendSuspended(chatId);
 
   if (!user.rules_accepted) return askRules(chatId);
 
