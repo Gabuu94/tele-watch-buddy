@@ -48,6 +48,16 @@ type BotUser = {
   approved: boolean;
 };
 
+const VIP_DISCOUNT = 0.9; // VIP members pay 90% — 10% off everything
+
+function isVip(user: any): boolean {
+  return user?.state?.vip === true;
+}
+
+function vipPrice(user: any, price: number): number {
+  return isVip(user) ? Math.round(price * VIP_DISCOUNT * 100) / 100 : price;
+}
+
 async function sendSuspended(chatId: number): Promise<void> {
   await sendMessage(
     chatId,
@@ -285,9 +295,10 @@ async function handleCallback(cq: any) {
       .select("id", { count: "exact", head: true })
       .eq("bot_user_id", user.id)
       .eq("kind", "buy");
+    const vip = isVip(user);
     await sendMessage(
       chatId,
-      `◈ <b>MY ACCOUNT</b>\n\nAvailable balance  <b>${money(user.balance)}</b>\nOrders placed  <b>${count ?? 0}</b>\nReferral earnings  <b>${money(user.referral_earned ?? 0)}</b>\n\nAccount ID  <code>${user.telegram_id}</code>`,
+      `◈ <b>MY ACCOUNT</b>${vip ? "  ·  💎 <b>VIP MEMBER</b>" : ""}\n\nAvailable balance  <b>${money(user.balance)}</b>\nOrders placed  <b>${count ?? 0}</b>\nReferral earnings  <b>${money(user.referral_earned ?? 0)}</b>${vip ? "\n\n💎 VIP status  <b>Active</b>\nMember benefit  <b>10% off every purchase</b>" : ""}\n\nAccount ID  <code>${user.telegram_id}</code>`,
       [[{ text: "↗ Add funds", callback_data: "topup" }, { text: "◷ Order history", callback_data: "hist" }], backRow()],
     );
     return;
@@ -602,7 +613,7 @@ async function purchase(
   }
   const p = proxy as any;
   const period = RENTAL_PERIODS[periodIdx] ?? RENTAL_PERIODS[0]!;
-  const price = Number(kind === "buy" ? periodPrice(p.price, periodIdx) : p.reveal_price);
+  const price = vipPrice(user, Number(kind === "buy" ? periodPrice(p.price, periodIdx) : p.reveal_price));
   const balance = Number(user.balance);
   if (balance < price) {
     await sendMessage(chatId, `◈ <b>INSUFFICIENT BALANCE</b>\n\nPrice  <b>${money(price)}</b>\nAvailable  <b>${money(balance)}</b>`, [
@@ -912,7 +923,7 @@ async function handleNumbers(user: BotUser, chatId: number, data: string): Promi
     const c = NUMBER_COUNTRIES.find((x) => x.id === cId);
     const tier = NUMBER_TIERS.find((t) => t.id === tierId);
     if (!svc || !c || !tier) return false;
-    const price = numberPrice(svc.id, c.id, tier.id);
+    const price = vipPrice(user, numberPrice(svc.id, c.id, tier.id));
     const balance = Number(user.balance);
     if (balance < price) {
       await sendMessage(chatId, `◈ <b>INSUFFICIENT BALANCE</b>\n\nPrice  <b>${money(price)}</b>\nAvailable  <b>${money(balance)}</b>`, [
