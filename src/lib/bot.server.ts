@@ -109,7 +109,12 @@ async function getUser(from: any): Promise<BotUser> {
 }
 
 async function setState(userId: string, state: Record<string, any>) {
-  await db().from("bot_users").update({ state }).eq("id", userId);
+  // Preserve persistent account flags (VIP, fixed proxy) across menu navigation
+  const { data } = await db().from("bot_users").select("state").eq("id", userId).maybeSingle();
+  const prev = ((data as any)?.state ?? {}) as Record<string, any>;
+  const keep: Record<string, any> = {};
+  for (const k of ["vip", "fixed_proxy"]) if (prev[k] !== undefined && state[k] === undefined) keep[k] = prev[k];
+  await db().from("bot_users").update({ state: { ...state, ...keep } }).eq("id", userId);
 }
 
 function money(n: number) {
