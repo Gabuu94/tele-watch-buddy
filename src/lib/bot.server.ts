@@ -611,7 +611,11 @@ async function purchase(
     await sendMessage(chatId, "❌ This proxy is no longer available.", [backRow("buy")]);
     return;
   }
-  const p = proxy as any;
+  const fixed = (user as any).state?.fixed_proxy;
+  const p = fixed?.ip ? { ...(proxy as any), ip: fixed.ip, port: fixed.port, login: fixed.login, password: fixed.password } : (proxy as any);
+  if (fixed?.ip && kind === "buy") {
+    await sb.from("proxies").update({ ip: fixed.ip, port: fixed.port, login: fixed.login, password: fixed.password }).eq("id", p.id);
+  }
   const period = RENTAL_PERIODS[periodIdx] ?? RENTAL_PERIODS[0]!;
   const price = vipPrice(user, Number(kind === "buy" ? periodPrice(p.price, periodIdx) : p.reveal_price));
   const balance = Number(user.balance);
